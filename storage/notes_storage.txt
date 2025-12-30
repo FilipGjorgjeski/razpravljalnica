@@ -1,0 +1,25 @@
+Notes:
+
+createdAt for users and topics not needed
+
+Soft deletes for messages and also text cleared in order to redact the message
+
+Why are we returning the event as well when posting, updating messages etc. in storage.go? 
+- server will implement subscriptions business logic
+
+Likes are implemented as map of sets to easily neglect potential duplicates of likes 
+(one user can like a message only once); it also makes sense to have a set of the users that have liked the message
+
+Does from_message_id mean actual message ID or just what place in the topic it has?
+- Currently implemented is actual message ID
+
+
+
+Maybe implement:
+
+We could implement more fine-grained locks - at least separate for events and messages
+
+Should we add messages like "topic does not exist" in storage.go or server.go?
+
+We could add expiration to tokens in the future
+
