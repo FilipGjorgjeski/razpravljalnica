@@ -20,6 +20,9 @@ jobs:
         run: go mod download
       - name: Install CLI tools
         run: make install-cli-tools
+      - name: Adjust PATH
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Test
         run: make grpc
       - name: Check if protos files have changes
