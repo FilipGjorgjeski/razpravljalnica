@@ -1,6 +1,10 @@
 package storage
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestCreateUser_TrimsAndUniqByName(t *testing.T) {
 	s := New()
@@ -26,32 +30,38 @@ func TestCreateUser_TrimsAndUniqByName(t *testing.T) {
 }
 
 func TestCreateTopic_ListTopicsSortedByID(t *testing.T) {
-	s := New()
 
-	if _, err := s.CreateTopic("b"); err != nil {
-		t.Fatalf("CreateTopic error: %v", err)
-	}
-	if _, err := s.CreateTopic("a"); err != nil {
-		t.Fatalf("CreateTopic error: %v", err)
-	}
-	if _, err := s.CreateTopic("c"); err != nil {
-		t.Fatalf("CreateTopic error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		s := New()
 
-	topics := s.ListTopics()
-	if len(topics) != 3 {
-		t.Fatalf("expected 3 topics, got %d", len(topics))
-	}
-	if topics[0].ID != 1 || topics[1].ID != 2 || topics[2].ID != 3 {
-		t.Fatalf("expected IDs [1,2,3], got [%d,%d,%d]", topics[0].ID, topics[1].ID, topics[2].ID)
-	}
+		_, err := s.CreateTopic("b")
+		assert.NoError(t, err)
+		_, err = s.CreateTopic("a")
+		assert.NoError(t, err)
+		_, err = s.CreateTopic("c")
+		assert.NoError(t, err)
 
-	if _, err := s.CreateTopic("a"); err != ErrAlreadyExists {
-		t.Fatalf("expected ErrAlreadyExists, got %v", err)
-	}
-	if _, err := s.CreateTopic("  "); err != ErrInvalidArgument {
-		t.Fatalf("expected ErrInvalidArgument, got %v", err)
-	}
+		topics := s.ListTopics()
+		assert.Len(t, topics, 3)
+		assert.EqualValues(t, 1, topics[0].ID)
+		assert.EqualValues(t, 2, topics[1].ID)
+		assert.EqualValues(t, 3, topics[2].ID)
+	})
+
+	t.Run("already-exists", func(t *testing.T) {
+		s := New()
+		_, err := s.CreateTopic("a")
+		assert.NoError(t, err)
+
+		_, err = s.CreateTopic("a")
+		assert.ErrorIs(t, err, ErrAlreadyExists)
+	})
+
+	t.Run("invalid-argument", func(t *testing.T) {
+		s := New()
+		_, err := s.CreateTopic("  ")
+		assert.ErrorIs(t, err, ErrInvalidArgument)
+	})
 }
 
 func TestPostUpdateDeleteLikeAndGetMessages(t *testing.T) {
