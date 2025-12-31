@@ -30,9 +30,10 @@ func TestCreateUser_TrimsAndUniqByName(t *testing.T) {
 }
 
 func TestCreateTopic_ListTopicsSortedByID(t *testing.T) {
-	s := New()
 
 	t.Run("success", func(t *testing.T) {
+		s := New()
+
 		_, err := s.CreateTopic("b")
 		assert.NoError(t, err)
 		_, err = s.CreateTopic("a")
@@ -48,11 +49,16 @@ func TestCreateTopic_ListTopicsSortedByID(t *testing.T) {
 	})
 
 	t.Run("already-exists", func(t *testing.T) {
+		s := New()
 		_, err := s.CreateTopic("a")
+		assert.NoError(t, err)
+
+		_, err = s.CreateTopic("a")
 		assert.ErrorIs(t, err, ErrAlreadyExists)
 	})
 
 	t.Run("invalid-argument", func(t *testing.T) {
+		s := New()
 		_, err := s.CreateTopic("  ")
 		assert.ErrorIs(t, err, ErrInvalidArgument)
 	})
