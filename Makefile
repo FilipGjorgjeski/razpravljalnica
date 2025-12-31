@@ -12,3 +12,6 @@ install-cli-tools: install-protoc install-go-tools
 
 grpc:
 	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative protos/razpravljalnica.proto
+
+test:
+	go test -p 1 ./...
