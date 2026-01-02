@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"sort"
 	"strings"
@@ -25,7 +27,6 @@ const (
 	OpUpdate OpType = 3
 )
 
-// Basic domain model stored in-memory.
 type User struct {
 	ID        int64
 	Name      string
@@ -48,7 +49,6 @@ type Message struct {
 	Deleted   bool // allows soft delete, simpler and more efficient than deleting from byTopic
 }
 
-// Event is an append-only entry describing changes.
 type Event struct {
 	SequenceNumber int64
 	Op             OpType
@@ -325,4 +325,121 @@ func (s *Storage) appendEventLocked(op OpType, msg Message) Event {
 	s.nextSequenceNum++
 	s.events = append(s.events, ev)
 	return ev
+}
+
+func (s *Storage) CreateSubscriptionToken(userID int64, topicIDs []int64) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.users[userID]; !ok {
+		return "", ErrNotFound
+	}
+	if len(topicIDs) == 0 {
+		return "", ErrInvalidArgument
+	}
+	for _, tid := range topicIDs {
+		if tid <= 0 {
+			return "", ErrInvalidArgument
+		}
+		if _, ok := s.topics[tid]; !ok {
+			return "", ErrNotFound
+		}
+	}
+
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	tok := base64.RawURLEncoding.EncodeToString(buf)
+
+	uniq := uniqueSorted(topicIDs)
+	s.subTokens[tok] = SubscriptionToken{
+		Token:    tok,
+		UserID:   userID,
+		TopicIDs: uniq,
+		IssuedAt: time.Now().UTC(),
+	}
+	return tok, nil
+}
+
+func (s *Storage) ValidateSubscriptionToken(token string, userID int64, topicIDs []int64) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	st, ok := s.subTokens[token]
+	if !ok {
+		return ErrUnauthorized
+	}
+	if st.UserID != userID {
+		return ErrUnauthorized
+	}
+
+	requested := uniqueSorted(topicIDs)
+	if !isSubset(requested, st.TopicIDs) {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
+// CurrentSequence returns the last assigned event sequence number (0 if none).
+func (s *Storage) CurrentSequence() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.nextSequenceNum - 1
+}
+
+// EventsBetween returns events where fromExclusive < seq <= toInclusive.
+func (s *Storage) EventsBetween(fromExclusive, toInclusive int64) []Event {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if toInclusive <= fromExclusive {
+		return nil
+	}
+
+	start := 0
+	for start < len(s.events) && s.events[start].SequenceNumber <= fromExclusive {
+		start++
+	}
+	end := start
+	for end < len(s.events) && s.events[end].SequenceNumber <= toInclusive {
+		end++
+	}
+	res := make([]Event, end-start)
+	copy(res, s.events[start:end])
+	return res
+}
+
+func uniqueSorted(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	copyIDs := append([]int64(nil), ids...)
+	sort.Slice(copyIDs, func(i, j int) bool { return copyIDs[i] < copyIDs[j] })
+	res := make([]int64, 0, len(copyIDs))
+	var last int64
+	for i, id := range copyIDs {
+		if i == 0 || id != last {
+			res = append(res, id)
+			last = id
+		}
+	}
+	return res
+}
+
+func isSubset(lookFor, lookIn []int64) bool {
+	i, j := 0, 0
+	for i < len(lookFor) && j < len(lookIn) {
+		if lookFor[i] == lookIn[j] {
+			i++
+			j++
+			continue
+		}
+		if lookFor[i] > lookIn[j] {
+			j++
+			continue
+		}
+		return false
+	}
+	return i == len(lookFor)
 }
