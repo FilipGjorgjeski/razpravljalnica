@@ -203,3 +203,55 @@ func TestEventSequenceIsMonotonic(t *testing.T) {
 		t.Fatalf("expected seq 1,2,3 got %d,%d,%d", ev1.SequenceNumber, ev2.SequenceNumber, ev3.SequenceNumber)
 	}
 }
+
+func TestSubscriptionToken_CreateAndValidate(t *testing.T) {
+	s := New()
+
+	u, err := s.CreateUser("alice")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	t1, err := s.CreateTopic("t1")
+	if err != nil {
+		t.Fatalf("CreateTopic: %v", err)
+	}
+	t2, err := s.CreateTopic("t2")
+	if err != nil {
+		t.Fatalf("CreateTopic: %v", err)
+	}
+
+	tok, err := s.CreateSubscriptionToken(u.ID, []int64{t1.ID, t2.ID})
+	if err != nil {
+		t.Fatalf("CreateSubscriptionToken: %v", err)
+	}
+
+	// valid: exact topics
+	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{t1.ID, t2.ID}); err != nil {
+		t.Fatalf("ValidateSubscriptionToken(valid exact): %v", err)
+	}
+
+	// valid: subset of topics
+	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{t1.ID}); err != nil {
+		t.Fatalf("ValidateSubscriptionToken(valid subset): %v", err)
+	}
+
+	// invalid: wrong user
+	wrongUser := u.ID + 1
+	if err := s.ValidateSubscriptionToken(tok, wrongUser, []int64{t1.ID}); err != ErrUnauthorized {
+		t.Fatalf("expected ErrUnauthorized for wrong user, got %v", err)
+	}
+
+	// invalid: random token
+	if err := s.ValidateSubscriptionToken("no-such-token", u.ID, []int64{t1.ID}); err != ErrUnauthorized {
+		t.Fatalf("expected ErrUnauthorized for bad token, got %v", err)
+	}
+
+	// invalid: requesting topic not in token
+	otherTopic, err := s.CreateTopic("other")
+	if err != nil {
+		t.Fatalf("CreateTopic: %v", err)
+	}
+	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{otherTopic.ID}); err != ErrUnauthorized {
+		t.Fatalf("expected ErrUnauthorized for topic outside token, got %v", err)
+	}
+}
