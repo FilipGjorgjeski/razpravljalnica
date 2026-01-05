@@ -2,22 +2,30 @@ package ui
 
 import "github.com/rivo/tview"
 
-var pages *tview.Pages
+type AppPage string
 
-func SwitchUIPage(name string) {
-	pages.SwitchToPage(name)
-}
+const (
+	LoginPage AppPage = "login"
+	ChatPage  AppPage = "chat"
+)
 
 func NewUI() *tview.Application {
-	//root := tview.NewBox().SetBorder(true).SetTitle("razpravljalnica")
-	loginScreen := newLoginScreen()
-	chatScreen := newChatScreen()
 
-	pages = tview.NewPages()
-	pages.AddPage("login", loginScreen, true, true)
-	pages.AddPage("chat", chatScreen, true, false)
+	app := tview.NewApplication()
+	pages := tview.NewPages()
+	app.SetRoot(pages, true).SetFocus(pages)
 
-	app := tview.NewApplication().SetRoot(pages, true).SetFocus(pages)
+	header := NewHeader()
+	chat := NewChat()
+
+	d := NewDisplay(app, header, chat, pages, UsernameSelection)
+	d.RegisterKeyboardHandlers()
+
+	loginScreen := newLoginScreen(d, header)
+	pages.AddPage(string(LoginPage), loginScreen, true, true)
+
+	chatScreen := newChatScreen(d, header, chat)
+	pages.AddPage(string(ChatPage), chatScreen, true, false)
 
 	return app
 }

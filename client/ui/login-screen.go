@@ -4,14 +4,23 @@ import (
 	"github.com/rivo/tview"
 )
 
-func newLoginScreen() tview.Primitive {
-	loginForm := tview.NewForm().
-		AddInputField("Username", "", 20, nil, func(text string) {}).
-		AddButton("Submit", func() { pages.SwitchToPage("chat") })
+func newLoginScreen(d *Display, header *Header) tview.Primitive {
+	username := ""
 
-	grid := getStandardGrid()
+	loginForm := tview.NewForm().
+		AddInputField("Username", "", 20, nil, func(text string) { username = text }).
+		AddButton("Submit", func() {
+			d.SetUsername(username)
+			d.ToTopicMenu()
+		})
+
+	loginForm.SetBorder(true)
+
+	centeredLoginForm := getCenteredFlexContainer(loginForm, 40, 7)
+
+	grid := getStandardGrid(false)
 
 	return grid.
-		AddItem(newHeader(), 0, 0, 1, 3, 0, 0, false).
-		AddItem(loginForm, 1, 1, 1, 1, 0, 100, true)
+		AddItem(header.GetView(), 0, 0, 1, 1, 0, 0, false).
+		AddItem(centeredLoginForm, 1, 0, 1, 1, 0, 100, true)
 }
