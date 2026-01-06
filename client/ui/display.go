@@ -18,9 +18,10 @@ const (
 )
 
 type Display struct {
-	user          *razpravljalnica.User
-	activeMode    DisplayMode
-	selectedTopic *razpravljalnica.Topic
+	user            *razpravljalnica.User
+	activeMode      DisplayMode
+	selectedTopic   *razpravljalnica.Topic
+	selectedMessage *razpravljalnica.Message
 
 	chat   *Chat
 	header *Header
@@ -103,6 +104,7 @@ func (d *Display) SetUsername(username string) {
 }
 
 func (d *Display) ToTopicMenu() {
+	d.selectedMessage = nil
 	d.activeMode = TopicMenu
 	d.selectedTopic = &razpravljalnica.Topic{}
 	d.chat.messageList.SetSelectable(false, false)
@@ -111,6 +113,7 @@ func (d *Display) ToTopicMenu() {
 
 // Focus message list of specific topic, if topic is nil, current active topic will not be changed
 func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
+	d.selectedMessage = nil
 	if topic != nil {
 		d.selectedTopic = topic
 	}
@@ -126,8 +129,10 @@ func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
 func (d *Display) ToMessageBox(selectedMessage *razpravljalnica.Message) {
 	if selectedMessage == nil {
 		d.chat.messageFormInput.SetLabel("New message")
+		d.selectedMessage = nil
 	} else {
 		d.chat.messageFormInput.SetLabel("Edit message")
+		d.selectedMessage = selectedMessage
 	}
 
 	d.activeMode = MessageNew
