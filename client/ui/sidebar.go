@@ -16,7 +16,7 @@ func newSidebar(d *Display) tview.Primitive {
 
 	return table.Select(0, 0).SetSelectable(true, false).SetSelectedFunc(func(row, column int) {
 		topic := table.GetCell(row, column).GetReference().(*razpravljalnica.Topic)
-		d.SelectTopic(topic)
+		d.ToMessageList(topic)
 	})
 }
 

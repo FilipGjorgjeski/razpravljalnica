@@ -21,6 +21,8 @@ func NewUI() *tview.Application {
 	d := NewDisplay(app, header, chat, pages, UsernameSelection)
 	d.RegisterKeyboardHandlers()
 
+	chat.d = d
+
 	loginScreen := newLoginScreen(d, header)
 	pages.AddPage(string(LoginPage), loginScreen, true, true)
 

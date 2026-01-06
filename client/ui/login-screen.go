@@ -12,7 +12,7 @@ func newLoginScreen(d *Display, header *Header) tview.Primitive {
 		AddButton("Submit", func() {
 			d.SetUsername(username)
 			d.ToTopicMenu()
-		})
+		}).SetButtonsAlign(tview.AlignCenter)
 
 	loginForm.SetBorder(true)
 

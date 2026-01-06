@@ -12,13 +12,13 @@ type DisplayMode int
 const (
 	UsernameSelection DisplayMode = iota
 	TopicMenu
-	ChatType
-	ChatScroll
-	ChatEdit
+	MessageNew
+	MessageList
+	MessageEdit
 )
 
 type Display struct {
-	username      string
+	user          *razpravljalnica.User
 	activeMode    DisplayMode
 	selectedTopic *razpravljalnica.Topic
 
@@ -46,11 +46,23 @@ func (d *Display) RegisterKeyboardHandlers() {
 			switch d.activeMode {
 			case UsernameSelection, TopicMenu:
 				d.app.Stop()
-			case ChatScroll:
+			case MessageList:
 				d.ToTopicMenu()
+			case MessageNew:
+				d.ToMessageList(nil)
 			}
 		}
 		return event
+	})
+
+	// Selecting a message from the list
+	d.chat.messageList.SetSelectedFunc(func(row, column int) {
+		message := d.chat.messageList.GetCell(row, 2).Reference.(*razpravljalnica.Message)
+		if message.UserId == d.user.Id {
+			d.ToMessageBox(message)
+		} else {
+			d.ToMessageBox(nil)
+		}
 	})
 }
 
@@ -63,7 +75,7 @@ func (d *Display) Update() {
 	}
 
 	d.header.Update(HeaderData{
-		username:      d.username,
+		username:      d.user.GetName(),
 		selectedTopic: d.selectedTopic.GetName(),
 	})
 
@@ -78,24 +90,49 @@ func (d *Display) GetSelectedTopic() *razpravljalnica.Topic {
 	return d.selectedTopic
 }
 
-func (d *Display) SelectTopic(topic *razpravljalnica.Topic) {
-	d.selectedTopic = topic
-	d.activeMode = ChatScroll
-	d.Update()
-	d.app.SetFocus(d.chat.GetView())
-}
-
 func (d *Display) GetUsername() string {
-	return d.username
+	return d.user.GetName()
 }
 
 func (d *Display) SetUsername(username string) {
-	d.username = username
+	d.user = &razpravljalnica.User{
+		Name: username,
+		Id:   1,
+	}
 	d.Update()
 }
 
 func (d *Display) ToTopicMenu() {
 	d.activeMode = TopicMenu
 	d.selectedTopic = &razpravljalnica.Topic{}
+	d.chat.messageList.SetSelectable(false, false)
 	d.Update()
+}
+
+// Focus message list of specific topic, if topic is nil, current active topic will not be changed
+func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
+	if topic != nil {
+		d.selectedTopic = topic
+	}
+	d.activeMode = MessageList
+	d.chat.messageList.SetSelectable(true, false)
+	d.chat.HideMessageBox()
+	d.chat.ResetMessageBox()
+	d.Update()
+	d.app.SetFocus(d.chat.GetView())
+}
+
+// Focus message box, editing message if provided
+func (d *Display) ToMessageBox(selectedMessage *razpravljalnica.Message) {
+	if selectedMessage == nil {
+		d.chat.messageFormInput.SetLabel("New message")
+	} else {
+		d.chat.messageFormInput.SetLabel("Edit message")
+	}
+
+	d.activeMode = MessageNew
+	d.chat.messageList.SetSelectable(false, false)
+	d.chat.ShowMessageBox()
+	d.Update()
+	d.app.SetFocus(d.chat.messageForm)
 }
