@@ -143,7 +143,7 @@ func (s *Services) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Messa
 	if req.GetSubscribeToken() == "" {
 		return status.Error(codes.Unauthenticated, "subscribe_token required")
 	}
-	if err := s.store.ValidateSubscriptionToken(req.GetSubscribeToken(), req.GetUserId(), req.GetTopicId()); err != nil {
+	if err := s.store.ValidateSubscriptionToken(req.GetSubscribeToken(), req.GetUserId(), req.GetTopicId(), s.nodeID); err != nil {
 		return mapErr(err)
 	}
 	fromMessageID := req.GetFromMessageId()

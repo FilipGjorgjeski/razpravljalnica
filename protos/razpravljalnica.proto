@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package razpravljalnica;
 
-option go_package = "/razpravljalnica";
+option go_package = "github.com/FilipGjorgjeski/razpravljalnica/protos;razpravljalnica";
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
@@ -92,22 +92,26 @@ service  MessageBoard{
 
 message CreateUserRequest {
   string name = 1;
+  string request_id = 2; // idempotency key; client should reuse on retry
 }
 
 message CreateTopicRequest {
   string name = 1;
+  string request_id = 2; // idempotency key; client should reuse on retry
 }
 
 message PostMessageRequest {
   int64 topic_id = 1;
   int64 user_id = 2;
   string text = 3;
+  string request_id = 4; // idempotency key; client should reuse on retry
 }
 
 message DeleteMessageRequest {
   int64 topic_id = 1;
   int64 user_id = 2;
   int64 message_id = 3;
+  string request_id = 4; // idempotency key; client should reuse on retry
 }
 
 message UpdateMessageRequest {
@@ -115,12 +119,14 @@ message UpdateMessageRequest {
   int64 user_id = 2;
   int64 message_id = 3;
   string text = 4; // new text
+  string request_id = 5; // idempotency key; client should reuse on retry
 }
 
 message LikeMessageRequest {
   int64 topic_id = 1;
   int64 message_id = 2;
   int64 user_id = 3; // user who posted the like
+  string request_id = 4; // idempotency key; client should reuse on retry
 }
 
 message ListTopicsResponse {
@@ -167,9 +173,145 @@ message MessageEvent {
 // Return the the head and the tail node address
 service ControlPlane {
   rpc GetClusterState(google.protobuf.Empty) returns (GetClusterStateResponse);
+
+  // Clients can watch for cluster membership/head/tail changes.
+  // Server sends the current state immediately and then pushes updates when config_version changes.
+  rpc WatchClusterState(WatchClusterStateRequest) returns (stream GetClusterStateResponse);
+
+  // Nodes call this periodically. Response contains current chain membership
+  // and this node's role + neighbors.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message WatchClusterStateRequest {
+  // If set, the server may skip sending updates until config_version > last_seen_config_version.
+  int64 last_seen_config_version = 1;
 }
 
 message GetClusterStateResponse {
   NodeInfo head = 1;
   NodeInfo tail = 2;
+  repeated NodeInfo chain = 3; // head..tail (best-effort, for debugging/clients)
+  int64 config_version = 4;
+}
+
+enum ChainRole {
+  ROLE_UNKNOWN = 0;
+  ROLE_HEAD = 1;
+  ROLE_MIDDLE = 2;
+  ROLE_TAIL = 3;
+}
+
+message NodeStatus {
+  int64 last_applied = 1;
+  int64 last_committed = 2;
+}
+
+message HeartbeatRequest {
+  string node_id = 1;
+  string address = 2; // node's advertised gRPC address
+  NodeStatus status = 3;
+}
+
+message HeartbeatResponse {
+  int64 config_version = 1;
+  ChainRole role = 2;
+  NodeInfo head = 3;
+  NodeInfo tail = 4;
+  NodeInfo predecessor = 5;
+  NodeInfo successor = 6;
+  repeated NodeInfo chain = 7; // head..tail
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Internal replication (node <-> node)
+////////////////////////////////////////////////////////////////////////////////
+
+service Replication {
+  // Forward a single ordered log entry downstream (head -> ... -> tail).
+  rpc Replicate(ReplicateRequest) returns (google.protobuf.Empty);
+
+  // Send acknowledgement upstream (tail -> ... -> head).
+  rpc Ack(AckRequest) returns (google.protobuf.Empty);
+
+  // Used for resync after reconfiguration.
+  rpc GetEntries(GetEntriesRequest) returns (GetEntriesResponse);
+
+  rpc GetStatus(google.protobuf.Empty) returns (NodeStatus);
+}
+
+message LogEntry {
+  int64 sequence_number = 1;
+  string request_id = 2; // idempotency key for client retries (assigned/propagated by head)
+  google.protobuf.Timestamp at = 3;
+
+  oneof op {
+    CreateUserOp create_user = 10;
+    CreateTopicOp create_topic = 11;
+    PostMessageOp post_message = 12;
+    UpdateMessageOp update_message = 13;
+    DeleteMessageOp delete_message = 14;
+    LikeMessageOp like_message = 15;
+    RegisterSubscriptionOp register_subscription = 16;
+  }
+}
+
+message RegisterSubscriptionOp {
+  string token = 1;
+  int64 user_id = 2;
+  repeated int64 topic_id = 3;
+  string assigned_node_id = 4;
+}
+
+message CreateUserOp {
+  int64 user_id = 1;
+  string name = 2;
+}
+
+message CreateTopicOp {
+  int64 topic_id = 1;
+  string name = 2;
+}
+
+message PostMessageOp {
+  int64 message_id = 1;
+  int64 topic_id = 2;
+  int64 user_id = 3;
+  string text = 4;
+}
+
+message UpdateMessageOp {
+  int64 topic_id = 1;
+  int64 user_id = 2;
+  int64 message_id = 3;
+  string text = 4;
+}
+
+message DeleteMessageOp {
+  int64 topic_id = 1;
+  int64 user_id = 2;
+  int64 message_id = 3;
+}
+
+message LikeMessageOp {
+  int64 topic_id = 1;
+  int64 message_id = 2;
+  int64 user_id = 3;
+}
+
+message ReplicateRequest {
+  LogEntry entry = 1;
+}
+
+message AckRequest {
+  int64 sequence_number = 1;
+}
+
+message GetEntriesRequest {
+  int64 from_sequence_number = 1; // inclusive
+  int32 limit = 2; // server may return fewer
+}
+
+message GetEntriesResponse {
+  repeated LogEntry entries = 1;
 }

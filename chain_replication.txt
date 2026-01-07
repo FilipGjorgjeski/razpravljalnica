@@ -1,0 +1,27 @@
+Writes - head
+Reads - tail
+Subscription - uravnotezene obremenitve; Noti poslje sele ko dobi potrditev
+Pri vpisu potrditve
+Client rpc GetClusterState da dobi head pa tail (potentially whole seq)
+Obvestilo odjemalcu za uspeh vpisa
+
+Should the client be asking the head for cluster info and subscription tokens
+or the control plane? - zaneslijva razlicica lahko head; nezanesljiva mora control plane
+sicer ce odpade head, sistem ne deluje, hocemo pa tudi ce eno pod. vozl. je zivo da deluje.
+
+Dodavanje node na podadkovni ravni - tail - prenesvenje data i davanje tail role
+
+I uste mnogu raboti okolu control plane.
+I uste mnogu raboti okolu optimizacija na data plane.
+Proveri sho e od rabotine od skriptana na lotric implementirano veke.
+Za sekoja funcionalnost prasvi go gpt:
+- Sho ke se slucit vo toj i toj slucaj?
+
+
+Se ogradvime od dupli lajkoj (interesen feature)
+
+
+Changes needed:
+
+Instead of dialing the server before every rpc, only dial it when we get a chain info update from the control plane.
+Subscription distribution control we want control plane (currently client)
