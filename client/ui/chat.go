@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/FilipGjorgjeski/razpravljalnica/client/connection"
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Chat struct {
@@ -51,13 +49,10 @@ func NewChat() *Chat {
 	messageForm := tview.NewForm().
 		AddFormItem(textInput).
 		AddButton("Send", func() {
-			connection.Messages = append(connection.Messages, &razpravljalnica.Message{
-				Id:        100,
-				TopicId:   chat.d.selectedTopic.Id,
-				UserId:    chat.d.user.Id,
-				Text:      chat.messageFormInputContent,
-				CreatedAt: timestamppb.Now(),
-				Likes:     0,
+			chat.d.conn.SendMessage(&razpravljalnica.PostMessageRequest{
+				TopicId: chat.d.selectedTopic.Id,
+				UserId:  chat.d.user.Id,
+				Text:    chat.messageFormInputContent,
 			})
 			chat.d.ToMessageList(nil)
 		}).SetButtonsAlign(tview.AlignRight)
@@ -85,7 +80,7 @@ func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
 	dateCell := tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)).SetTextColor(tcell.ColorDarkGray)
 	c.messageList.SetCell(row, 0, dateCell)
 
-	user := connection.GetUserById(message.GetUserId())
+	user := c.d.conn.GetUserById(message.GetUserId())
 	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", user.GetName())).SetAlign(tview.AlignRight)
 	c.messageList.SetCell(row, 1, usernameCell)
 

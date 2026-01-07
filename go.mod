@@ -6,6 +6,7 @@ require (
 	github.com/gdamore/tcell/v2 v2.8.1
 	github.com/rivo/tview v0.42.1-0.20250929082832-e113793670e2
 	github.com/stretchr/testify v1.11.1
+	github.com/urfave/cli/v3 v3.6.1
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 )

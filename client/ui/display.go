@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"sync"
+
 	"github.com/FilipGjorgjeski/razpravljalnica/client/connection"
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
 	"github.com/gdamore/tcell/v2"
@@ -23,13 +25,16 @@ type Display struct {
 	selectedTopic   *razpravljalnica.Topic
 	selectedMessage *razpravljalnica.Message
 
+	lock sync.RWMutex
+
 	chat   *Chat
 	header *Header
 	pages  *tview.Pages
 	app    *tview.Application
+	conn   *connection.Connection
 }
 
-func NewDisplay(app *tview.Application, header *Header, chat *Chat, pages *tview.Pages, defaultMode DisplayMode) *Display {
+func NewDisplay(app *tview.Application, header *Header, chat *Chat, pages *tview.Pages, defaultMode DisplayMode, conn *connection.Connection) *Display {
 	return &Display{
 		activeMode:    defaultMode,
 		selectedTopic: &razpravljalnica.Topic{},
@@ -38,6 +43,7 @@ func NewDisplay(app *tview.Application, header *Header, chat *Chat, pages *tview
 		header: header,
 		chat:   chat,
 		app:    app,
+		conn:   conn,
 	}
 }
 
@@ -52,6 +58,9 @@ func (d *Display) RegisterKeyboardHandlers() {
 			case MessageNew:
 				d.ToMessageList(nil)
 			}
+		}
+		if event.Key() == tcell.KeyCtrlR {
+			d.Update()
 		}
 		return event
 	})
@@ -68,6 +77,8 @@ func (d *Display) RegisterKeyboardHandlers() {
 }
 
 func (d *Display) Update() {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	// Handle page
 	if d.activeMode == UsernameSelection {
 		d.pages.SwitchToPage(string(LoginPage))
@@ -76,11 +87,11 @@ func (d *Display) Update() {
 	}
 
 	d.header.Update(HeaderData{
-		username:      d.user.GetName(),
-		selectedTopic: d.selectedTopic.GetName(),
+		username:         d.user.GetName(),
+		connectionStatus: d.conn.Status(),
 	})
 
-	messages := connection.GetTopicMessages(d.selectedTopic.GetId())
+	messages := d.conn.GetTopicMessages(d.selectedTopic.GetId())
 
 	d.chat.Update(ChatData{
 		messages: messages,

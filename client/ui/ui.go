@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/rivo/tview"
+import (
+	"github.com/FilipGjorgjeski/razpravljalnica/client/connection"
+	"github.com/rivo/tview"
+)
 
 type AppPage string
 
@@ -9,7 +12,7 @@ const (
 	ChatPage  AppPage = "chat"
 )
 
-func NewUI() *tview.Application {
+func NewUI(conn *connection.Connection) *tview.Application {
 
 	app := tview.NewApplication()
 	pages := tview.NewPages()
@@ -18,9 +21,10 @@ func NewUI() *tview.Application {
 	header := NewHeader()
 	chat := NewChat()
 
-	d := NewDisplay(app, header, chat, pages, UsernameSelection)
+	d := NewDisplay(app, header, chat, pages, UsernameSelection, conn)
 	d.RegisterKeyboardHandlers()
 
+	conn.SetDisplayUpdateFunc(d.Update)
 	chat.d = d
 
 	loginScreen := newLoginScreen(d, header)

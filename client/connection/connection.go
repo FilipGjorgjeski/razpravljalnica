@@ -1,81 +1,188 @@
 package connection
 
 import (
+	"context"
+	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var Topics = []*razpravljalnica.Topic{
-	{
-		Id:   1,
-		Name: "Topic1",
-	},
-	{
-		Id:   2,
-		Name: "TopicWithAnUnusuallyLongName",
-	},
-	{
-		Id:   3,
-		Name: "Empty",
-	},
+type Connection struct {
+	url               string
+	client            *grpc.ClientConn
+	grpcClient        razpravljalnica.MessageBoardClient
+	displayUpdateFunc func()
+
+	status     string
+	statusLock sync.RWMutex
+
+	topics       []*razpravljalnica.Topic
+	topicsLock   sync.RWMutex
+	messages     []*razpravljalnica.Message
+	messagesLock sync.RWMutex
+	users        []*razpravljalnica.User
+	usersLock    sync.RWMutex
 }
 
-var Messages = []*razpravljalnica.Message{
-	{
-		Id:        1,
-		TopicId:   1,
-		UserId:    1,
-		Text:      "Message written by User 1 in topic 1",
-		CreatedAt: timestamppb.New(time.Now().Add(-time.Hour)),
-		Likes:     5,
-	},
-	{
-		Id:        2,
-		TopicId:   1,
-		UserId:    2,
-		Text:      "Message written by User 2 in topic 1",
-		CreatedAt: timestamppb.New(time.Now().Add(-time.Hour + time.Minute)),
-		Likes:     2,
-	},
-	{
-		Id:        3,
-		TopicId:   1,
-		UserId:    1,
-		Text:      "Message written by User 1 in topic 1",
-		CreatedAt: timestamppb.New(time.Now().Add(-time.Hour + 2*time.Minute)),
-		Likes:     0,
-	},
-	{
-		Id:        4,
-		TopicId:   2,
-		UserId:    1,
-		Text:      "Message written by User 1 in topic 2",
-		CreatedAt: timestamppb.New(time.Now().Add(-time.Hour)),
-		Likes:     0,
-	},
+func NewConnection(url string) *Connection {
+	conn := &Connection{
+		url: url,
+	}
+	err := conn.Connect()
+	if err != nil {
+		conn.Disconnect()
+	}
+	return conn
 }
 
-var Users = []*razpravljalnica.User{
-	{
-		Id:   1,
-		Name: "User1",
-	},
-	{
-		Id:   2,
-		Name: "User2",
-	},
-	{
-		Id:   3,
-		Name: "User3WithVeryLongUserName",
-	},
+func (c *Connection) SetDisplayUpdateFunc(f func()) {
+	c.displayUpdateFunc = f
 }
 
-func GetTopicMessages(topicId int64) []*razpravljalnica.Message {
+func (c *Connection) Connect() error {
+	client, err := grpc.NewClient(c.url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+
+	grpcClient := razpravljalnica.NewMessageBoardClient(client)
+
+	c.client = client
+	c.grpcClient = grpcClient
+	return nil
+}
+
+func (c *Connection) Disconnect() {
+	c.client.Close()
+	c.client = nil
+	c.grpcClient = nil
+}
+
+func (c *Connection) IsConnected() bool {
+	if c.client == nil {
+		return false
+	}
+	if c.grpcClient == nil {
+		return false
+	}
+	return true
+}
+
+func (c *Connection) Status() string {
+	if !c.IsConnected() {
+		return "Disconnected"
+	}
+
+	c.statusLock.RLock()
+	defer c.statusLock.RUnlock()
+	if c.status != "" {
+		return c.status
+	}
+
+	return "OK"
+}
+
+func (c *Connection) handleError(err error) {
+	c.statusLock.Lock()
+	defer c.statusLock.Unlock()
+	c.status = fmt.Sprintf("Connection encountered error: %s", err)
+	c.displayUpdateFunc()
+}
+
+func (c *Connection) context() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Second)
+}
+
+func (c *Connection) LoadDebugData() {
+	c.topicsLock.Lock()
+	c.topics = []*razpravljalnica.Topic{
+		{
+			Id:   1,
+			Name: "Topic1",
+		},
+		{
+			Id:   2,
+			Name: "TopicWithAnUnusuallyLongName",
+		},
+		{
+			Id:   3,
+			Name: "Empty",
+		},
+	}
+	c.topicsLock.Unlock()
+
+	c.messagesLock.Lock()
+	c.messages = []*razpravljalnica.Message{
+		{
+			Id:        1,
+			TopicId:   1,
+			UserId:    1,
+			Text:      "Message written by User 1 in topic 1",
+			CreatedAt: timestamppb.New(time.Now().Add(-time.Hour)),
+			Likes:     5,
+		},
+		{
+			Id:        2,
+			TopicId:   1,
+			UserId:    2,
+			Text:      "Message written by User 2 in topic 1",
+			CreatedAt: timestamppb.New(time.Now().Add(-time.Hour + time.Minute)),
+			Likes:     2,
+		},
+		{
+			Id:        3,
+			TopicId:   1,
+			UserId:    1,
+			Text:      "Message written by User 1 in topic 1",
+			CreatedAt: timestamppb.New(time.Now().Add(-time.Hour + 2*time.Minute)),
+			Likes:     0,
+		},
+		{
+			Id:        4,
+			TopicId:   2,
+			UserId:    1,
+			Text:      "Message written by User 1 in topic 2",
+			CreatedAt: timestamppb.New(time.Now().Add(-time.Hour)),
+			Likes:     0,
+		},
+	}
+	c.messagesLock.Unlock()
+
+	c.usersLock.Lock()
+	c.users = []*razpravljalnica.User{
+		{
+			Id:   1,
+			Name: "User1",
+		},
+		{
+			Id:   2,
+			Name: "User2",
+		},
+		{
+			Id:   3,
+			Name: "User3WithVeryLongUserName",
+		},
+	}
+	c.usersLock.Unlock()
+}
+
+func (c *Connection) GetTopics() []*razpravljalnica.Topic {
+	c.topicsLock.RLock()
+	defer c.topicsLock.RUnlock()
+	return c.topics
+}
+
+func (c *Connection) GetTopicMessages(topicId int64) []*razpravljalnica.Message {
+	c.messagesLock.RLock()
+	defer c.messagesLock.RUnlock()
 	return slices.Collect(func(yield func(*razpravljalnica.Message) bool) {
-		for _, message := range Messages {
+		for _, message := range c.messages {
 			if message.TopicId == topicId {
 				if !yield(message) {
 					return
@@ -85,8 +192,10 @@ func GetTopicMessages(topicId int64) []*razpravljalnica.Message {
 	})
 }
 
-func GetUserById(userId int64) *razpravljalnica.User {
-	index := slices.IndexFunc(Users, func(u *razpravljalnica.User) bool {
+func (c *Connection) GetUserById(userId int64) *razpravljalnica.User {
+	c.usersLock.RLock()
+	defer c.usersLock.RUnlock()
+	index := slices.IndexFunc(c.users, func(u *razpravljalnica.User) bool {
 		return u.Id == userId
 	})
 
@@ -94,5 +203,39 @@ func GetUserById(userId int64) *razpravljalnica.User {
 		return &razpravljalnica.User{}
 	}
 
-	return Users[index]
+	return c.users[index]
+}
+
+func (c *Connection) CreateUser(username string) *razpravljalnica.User {
+	if !c.IsConnected() {
+		return &razpravljalnica.User{}
+	}
+	ctx, cancel := c.context()
+	defer cancel()
+
+	user, err := c.grpcClient.CreateUser(ctx, &razpravljalnica.CreateUserRequest{
+		Name: username,
+	})
+	if err != nil {
+		c.handleError(err)
+		return &razpravljalnica.User{}
+	}
+
+	return user
+}
+
+func (c *Connection) SendMessage(req *razpravljalnica.PostMessageRequest) *razpravljalnica.Message {
+	if !c.IsConnected() {
+		return &razpravljalnica.Message{}
+	}
+	ctx, cancel := c.context()
+	defer cancel()
+
+	msg, err := c.grpcClient.PostMessage(ctx, req)
+	if err != nil {
+		c.handleError(err)
+		return &razpravljalnica.Message{}
+	}
+
+	return msg
 }

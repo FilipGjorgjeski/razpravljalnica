@@ -9,8 +9,8 @@ type Header struct {
 }
 
 type HeaderData struct {
-	username      string
-	selectedTopic string
+	username         string
+	connectionStatus string
 }
 
 const headerText = `[yellow]Razpravljalnica
@@ -20,7 +20,7 @@ const headerText = `[yellow]Razpravljalnica
 func NewHeader() *Header {
 	status := tview.NewTable().
 		SetCellSimple(0, 0, "Username:").
-		SetCellSimple(1, 0, "Selected topic:")
+		SetCellSimple(1, 0, "Connection status:")
 
 	grid := tview.NewGrid().SetRows(0).SetColumns(0, 50).
 		AddItem(tview.NewTextView().SetDynamicColors(true).SetText(headerText), 0, 0, 1, 1, 0, 0, false).
@@ -40,5 +40,5 @@ func (c *Header) GetView() tview.Primitive {
 func (h *Header) Update(data HeaderData) {
 	h.statusTable.
 		SetCellSimple(0, 1, data.username).
-		SetCellSimple(1, 1, data.selectedTopic)
+		SetCellSimple(1, 1, data.connectionStatus)
 }

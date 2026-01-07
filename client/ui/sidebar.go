@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/FilipGjorgjeski/razpravljalnica/client/connection"
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
 	"github.com/rivo/tview"
 )
@@ -10,7 +9,9 @@ func newSidebar(d *Display) tview.Primitive {
 
 	table := tview.NewTable()
 
-	for i, topic := range connection.Topics {
+	topics := d.conn.GetTopics()
+
+	for i, topic := range topics {
 		addSidebarTopicEntry(table, topic, i)
 	}
 
