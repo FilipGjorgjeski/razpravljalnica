@@ -226,23 +226,22 @@ func TestSubscriptionToken_CreateAndValidate(t *testing.T) {
 	}
 
 	// valid: exact topics
-	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{t1.ID, t2.ID}); err != nil {
+	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{t1.ID, t2.ID}, ""); err != nil {
 		t.Fatalf("ValidateSubscriptionToken(valid exact): %v", err)
 	}
-
 	// valid: subset of topics
-	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{t1.ID}); err != nil {
+	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{t1.ID}, ""); err != nil {
 		t.Fatalf("ValidateSubscriptionToken(valid subset): %v", err)
 	}
 
 	// invalid: wrong user
 	wrongUser := u.ID + 1
-	if err := s.ValidateSubscriptionToken(tok, wrongUser, []int64{t1.ID}); err != ErrUnauthorized {
+	if err := s.ValidateSubscriptionToken(tok, wrongUser, []int64{t1.ID}, ""); err != ErrUnauthorized {
 		t.Fatalf("expected ErrUnauthorized for wrong user, got %v", err)
 	}
 
-	// invalid: random token
-	if err := s.ValidateSubscriptionToken("no-such-token", u.ID, []int64{t1.ID}); err != ErrUnauthorized {
+	// invalid: bad token
+	if err := s.ValidateSubscriptionToken("no-such-token", u.ID, []int64{t1.ID}, ""); err != ErrUnauthorized {
 		t.Fatalf("expected ErrUnauthorized for bad token, got %v", err)
 	}
 
@@ -251,7 +250,7 @@ func TestSubscriptionToken_CreateAndValidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTopic: %v", err)
 	}
-	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{otherTopic.ID}); err != ErrUnauthorized {
+	if err := s.ValidateSubscriptionToken(tok, u.ID, []int64{otherTopic.ID}, ""); err != ErrUnauthorized {
 		t.Fatalf("expected ErrUnauthorized for topic outside token, got %v", err)
 	}
 }

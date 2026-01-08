@@ -57,10 +57,11 @@ type Event struct {
 }
 
 type SubscriptionToken struct {
-	Token    string
-	UserID   int64
-	TopicIDs []int64
-	IssuedAt time.Time
+	Token          string
+	UserID         int64
+	TopicIDs       []int64
+	AssignedNodeID string
+	IssuedAt       time.Time
 }
 
 type Storage struct {
@@ -77,6 +78,20 @@ type Storage struct {
 	nextTopicID     int64
 	nextMessageID   int64
 	nextSequenceNum int64
+	nextLogSeq      int64
+
+	// Replication bookkeeping (used only in chain-replication mode).
+	appliedSeq   int64
+	committedSeq int64
+
+	logEntries []LogEntry
+	effects    map[int64]Effect         // seq -> effect snapshot
+	requests   map[string]RequestRecord // request_id -> record (for idempotency)
+
+	// Per-record last applied log sequence (used for dirty/clean reads under pipelining).
+	chainUserSeq    map[int64]int64
+	chainTopicSeq   map[int64]int64
+	chainMessageSeq map[int64]int64
 
 	subTokens map[string]SubscriptionToken // token -> data
 }
@@ -90,10 +105,19 @@ func New() *Storage {
 		likes:           map[int64]map[int64]struct{}{},
 		events:          make([]Event, 0, 128),
 		subTokens:       map[string]SubscriptionToken{},
+		logEntries:      make([]LogEntry, 0, 128),
+		effects:         map[int64]Effect{},
+		requests:        map[string]RequestRecord{},
+		chainUserSeq:    map[int64]int64{},
+		chainTopicSeq:   map[int64]int64{},
+		chainMessageSeq: map[int64]int64{},
 		nextUserID:      1,
 		nextTopicID:     1,
 		nextMessageID:   1,
 		nextSequenceNum: 1,
+		appliedSeq:      0,
+		committedSeq:    0,
+		nextLogSeq:      1,
 	}
 }
 
@@ -279,11 +303,11 @@ func (s *Storage) LikeMessage(topicID, messageID, userID int64) (Message, Event,
 	return msg, ev, nil
 }
 
-func (s *Storage) GetMessages(topicID, fromMessageID int64, limit int32) ([]Message, error) {
+func (s *Storage) GetMessages(topicID, fromOrdinal int64, limit int32) ([]Message, error) {
 	if topicID <= 0 {
 		return nil, ErrInvalidArgument
 	}
-	if fromMessageID < 0 {
+	if fromOrdinal < 0 {
 		return nil, ErrInvalidArgument
 	}
 	if limit < 0 {
@@ -298,17 +322,19 @@ func (s *Storage) GetMessages(topicID, fromMessageID int64, limit int32) ([]Mess
 	}
 
 	ids := s.byTopic[topicID]
+	if int(fromOrdinal) > len(ids) {
+		fromOrdinal = int64(len(ids))
+	}
+
 	res := make([]Message, 0, 32)
-	for _, id := range ids {
-		if id < fromMessageID {
-			continue
-		}
+	for i := fromOrdinal; i < int64(len(ids)); i++ {
+		id := ids[i]
 		msg := s.messages[id]
 		if msg.Deleted {
 			continue
 		}
 		res = append(res, msg)
-		if limit > 0 && int32(len(res)) >= limit { // we treat limit=0 as unlimited (return all messages)
+		if limit > 0 && int32(len(res)) >= limit { // limit=0 means all
 			break
 		}
 	}
@@ -362,7 +388,7 @@ func (s *Storage) CreateSubscriptionToken(userID int64, topicIDs []int64) (strin
 	return tok, nil
 }
 
-func (s *Storage) ValidateSubscriptionToken(token string, userID int64, topicIDs []int64) error {
+func (s *Storage) ValidateSubscriptionToken(token string, userID int64, topicIDs []int64, nodeID string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -371,6 +397,9 @@ func (s *Storage) ValidateSubscriptionToken(token string, userID int64, topicIDs
 		return ErrUnauthorized
 	}
 	if st.UserID != userID {
+		return ErrUnauthorized
+	}
+	if nodeID != "" && st.AssignedNodeID != "" && st.AssignedNodeID != nodeID {
 		return ErrUnauthorized
 	}
 
@@ -385,7 +414,11 @@ func (s *Storage) ValidateSubscriptionToken(token string, userID int64, topicIDs
 func (s *Storage) CurrentSequence() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.nextSequenceNum - 1
+	seq := s.nextSequenceNum - 1
+	if s.committedSeq > seq {
+		seq = s.committedSeq
+	}
+	return seq
 }
 
 // EventsBetween returns events where fromExclusive < seq <= toInclusive.
