@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"flag"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -26,7 +27,7 @@ type Config struct {
 }
 
 func (c *Config) RegisterFlags(fs *flag.FlagSet) {
-	fs.DurationVar(&c.HeartbeatTimeout, "heartbeat-timeout", 3*time.Second, "node failure timeout")
+	fs.DurationVar(&c.HeartbeatTimeout, "heartbeat-timeout", 6*time.Second, "node failure timeout")
 	fs.Func("chain", "comma-separated node IDs in chain order (head..tail)", func(v string) error {
 		v = strings.TrimSpace(v)
 		if v == "" {
@@ -63,6 +64,7 @@ type Server struct {
 	configVer int64
 	lastSig   string
 	pending   map[string]*pb.NodeInfo
+	alive     map[string]bool
 
 	watchMu     sync.Mutex
 	nextWatchID int64
@@ -73,7 +75,7 @@ func New(cfg Config) *Server {
 	if cfg.HeartbeatTimeout <= 0 {
 		cfg.HeartbeatTimeout = 3 * time.Second
 	}
-	return &Server{cfg: cfg, nodes: map[string]*nodeRuntime{}, pending: map[string]*pb.NodeInfo{}, watchers: map[int64]chan *pb.GetClusterStateResponse{}}
+	return &Server{cfg: cfg, nodes: map[string]*nodeRuntime{}, pending: map[string]*pb.NodeInfo{}, watchers: map[int64]chan *pb.GetClusterStateResponse{}, alive: map[string]bool{}}
 }
 
 func (s *Server) Register(gs *grpc.Server) {
@@ -110,6 +112,8 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 	rt.status = req.GetStatus()
 	rt.lastSeenAt = now
 
+	log.Printf("[control-plane] heartbeat node=%s addr=%s applied=%d committed=%d", id, addr, rt.status.GetLastApplied(), rt.status.GetLastCommitted())
+
 	// Promote any pending nodes that have caught up to the current tail's committed seq.
 	changed := s.promotePendingLocked(now)
 	s.mu.Unlock()
@@ -118,6 +122,7 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 	changed = changed || computeChanged
 	role, pred, succ := roleAndNeighbors(id, chain)
 	if changed {
+		log.Printf("[control-plane] cluster change ver=%d head=%s tail=%s chain=%v", ver, safeNodeID(head), safeNodeID(tail), ids(chain))
 		s.broadcastClusterState(&pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver})
 	}
 
@@ -162,6 +167,7 @@ func (s *Server) AddNode(ctx context.Context, req *pb.AddNodeRequest) (*pb.AddNo
 	}
 
 	s.pending[id] = &pb.NodeInfo{NodeId: id, Address: addr}
+	log.Printf("[control-plane] add pending node=%s addr=%s", id, addr)
 	// Remember the address so the node runtime is discoverable before its first heartbeat.
 	rt := s.nodes[id]
 	if rt == nil {
@@ -172,7 +178,10 @@ func (s *Server) AddNode(ctx context.Context, req *pb.AddNodeRequest) (*pb.AddNo
 
 	// If the node is already alive and caught up, promote immediately.
 	now := time.Now().UTC()
-	_ = s.promotePendingLocked(now)
+	promoted := s.promotePendingLocked(now)
+	if promoted {
+		log.Printf("[control-plane] node=%s promoted immediately on add", id)
+	}
 
 	return s.currentTailLocked(), nil
 }
@@ -215,6 +224,7 @@ func (s *Server) ActivateNode(ctx context.Context, req *pb.ActivateNodeRequest) 
 	chain, head, tail, ver, changed := s.computeChain(now)
 	resp := &pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver}
 	if changed {
+		log.Printf("[control-plane] activate node=%s ver=%d chain=%v", id, ver, ids(chain))
 		s.broadcastClusterState(resp)
 	}
 
@@ -335,7 +345,17 @@ func (s *Server) computeChain(now time.Time) (chain []*pb.NodeInfo, head *pb.Nod
 	chain = make([]*pb.NodeInfo, 0, len(s.cfg.ChainOrder))
 	for _, id := range s.cfg.ChainOrder {
 		rt := s.nodes[id]
-		if !alive(rt) {
+		isAlive := alive(rt)
+		prev := s.alive[id]
+		if isAlive != prev {
+			if isAlive {
+				log.Printf("[control-plane] node alive node=%s", id)
+			} else {
+				log.Printf("[control-plane] node dead (heartbeat timeout) node=%s", id)
+			}
+			s.alive[id] = isAlive
+		}
+		if !isAlive {
 			continue
 		}
 		chain = append(chain, &pb.NodeInfo{NodeId: rt.info.NodeId, Address: rt.info.Address})
@@ -354,8 +374,27 @@ func (s *Server) computeChain(now time.Time) (chain []*pb.NodeInfo, head *pb.Nod
 		s.configVer++
 		s.lastSig = sig
 		changed = true
+		log.Printf("[control-plane] config change ver=%d head=%s tail=%s chain=%v", s.configVer, safeNodeID(head), safeNodeID(tail), ids(chain))
 	}
 	return chain, head, tail, s.configVer, changed
+}
+
+func ids(chain []*pb.NodeInfo) []string {
+	res := make([]string, 0, len(chain))
+	for _, n := range chain {
+		if n == nil {
+			continue
+		}
+		res = append(res, n.NodeId+"@"+n.Address)
+	}
+	return res
+}
+
+func safeNodeID(n *pb.NodeInfo) string {
+	if n == nil {
+		return ""
+	}
+	return n.NodeId
 }
 
 // promotePendingLocked appends any pending nodes that have caught up to the current tail.
@@ -392,6 +431,7 @@ func (s *Server) promotePendingLocked(now time.Time) bool {
 		// Ensure address is retained when the node later becomes active.
 		rt.info = info
 		delete(s.pending, id)
+		log.Printf("[control-plane] auto-promote node=%s", id)
 		promoted = true
 	}
 	return promoted

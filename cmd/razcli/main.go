@@ -20,6 +20,8 @@ import (
 type globalOpts struct {
 	controlPlane string
 	timeout      time.Duration
+	targetAddr   string
+	noRedirect   bool
 }
 
 func main() {
@@ -57,6 +59,8 @@ func parseGlobal(args []string) (globalOpts, []string) {
 	fs := flag.NewFlagSet("razcli", flag.ExitOnError)
 	var opts globalOpts
 	fs.StringVar(&opts.controlPlane, "control-plane", "127.0.0.1:50050", "control-plane gRPC address")
+	fs.StringVar(&opts.targetAddr, "addr", "", "optional message-board address override (forces all data-plane calls here)")
+	fs.BoolVar(&opts.noRedirect, "no-redirect", false, "when set with --addr, disable redirect handling to observe failures")
 	fs.DurationVar(&opts.timeout, "timeout", 5*time.Second, "per-RPC timeout")
 	_ = fs.Parse(args)
 	return opts, fs.Args()
@@ -167,7 +171,7 @@ func cmdUser(opts globalOpts, args []string) error {
 	name := fs.String("name", "", "user name")
 	_ = fs.Parse(args)
 
-	c, err := client.New(opts.controlPlane)
+	c, err := client.NewWithTarget(opts.controlPlane, opts.targetAddr, opts.noRedirect)
 	if err != nil {
 		return err
 	}
@@ -195,7 +199,7 @@ func cmdTopic(opts globalOpts, args []string) error {
 		name := fs.String("name", "", "topic name")
 		_ = fs.Parse(args[1:])
 
-		c, err := client.New(opts.controlPlane)
+		c, err := client.NewWithTarget(opts.controlPlane, opts.targetAddr, opts.noRedirect)
 		if err != nil {
 			return err
 		}
@@ -213,7 +217,7 @@ func cmdTopic(opts globalOpts, args []string) error {
 		fs := flag.NewFlagSet("topic list", flag.ExitOnError)
 		_ = fs.Parse(args[1:])
 
-		c, err := client.New(opts.controlPlane)
+		c, err := client.NewWithTarget(opts.controlPlane, opts.targetAddr, opts.noRedirect)
 		if err != nil {
 			return err
 		}
@@ -242,7 +246,7 @@ func cmdMessage(opts globalOpts, args []string) error {
 		os.Exit(1)
 	}
 
-	c, err := client.New(opts.controlPlane)
+	c, err := client.NewWithTarget(opts.controlPlane, opts.targetAddr, opts.noRedirect)
 	if err != nil {
 		return err
 	}
@@ -340,7 +344,7 @@ func cmdSubscribe(opts globalOpts, args []string) error {
 		return err
 	}
 
-	c, err := client.New(opts.controlPlane)
+	c, err := client.NewWithTarget(opts.controlPlane, opts.targetAddr, opts.noRedirect)
 	if err != nil {
 		return err
 	}

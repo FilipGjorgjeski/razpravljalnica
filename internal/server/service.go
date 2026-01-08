@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -27,6 +28,10 @@ type Services struct {
 	advertiseAddr string
 }
 
+func (s *Services) logf(format string, args ...interface{}) {
+	log.Printf("[svc %s] "+format, append([]interface{}{s.nodeID}, args...)...)
+}
+
 func NewServices(store *storage.Storage, hub *Hub, nodeID, advertiseAddr string) *Services {
 	return &Services{store: store, hub: hub, nodeID: nodeID, advertiseAddr: advertiseAddr}
 }
@@ -48,49 +53,60 @@ func ListenAndServe(listenAddr string, services *Services) error {
 }
 
 func (s *Services) CreateUser(ctx context.Context, req *pb.CreateUserRequest) (*pb.User, error) {
+	s.logf("create_user name=%s", req.GetName())
 	u, err := s.store.CreateUser(req.GetName())
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	s.logf("create_user done id=%d", u.ID)
 	return &pb.User{Id: u.ID, Name: u.Name}, nil
 }
 
 func (s *Services) CreateTopic(ctx context.Context, req *pb.CreateTopicRequest) (*pb.Topic, error) {
+	s.logf("create_topic name=%s", req.GetName())
 	t, err := s.store.CreateTopic(req.GetName())
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	s.logf("create_topic done id=%d", t.ID)
 	return &pb.Topic{Id: t.ID, Name: t.Name}, nil
 }
 
 func (s *Services) PostMessage(ctx context.Context, req *pb.PostMessageRequest) (*pb.Message, error) {
+	s.logf("post_message topic=%d user=%d", req.GetTopicId(), req.GetUserId())
 	msg, ev, err := s.store.PostMessage(req.GetTopicId(), req.GetUserId(), req.GetText())
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	s.hub.Broadcast(ev)
+	s.logf("post_message done id=%d seq=%d", msg.ID, ev.SequenceNumber)
 	return toProtoMessage(msg), nil
 }
 
 func (s *Services) UpdateMessage(ctx context.Context, req *pb.UpdateMessageRequest) (*pb.Message, error) {
+	s.logf("update_message topic=%d id=%d user=%d", req.GetTopicId(), req.GetMessageId(), req.GetUserId())
 	msg, ev, err := s.store.UpdateMessage(req.GetTopicId(), req.GetUserId(), req.GetMessageId(), req.GetText())
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	s.hub.Broadcast(ev)
+	s.logf("update_message done id=%d seq=%d", msg.ID, ev.SequenceNumber)
 	return toProtoMessage(msg), nil
 }
 
 func (s *Services) DeleteMessage(ctx context.Context, req *pb.DeleteMessageRequest) (*emptypb.Empty, error) {
+	s.logf("delete_message topic=%d id=%d user=%d", req.GetTopicId(), req.GetMessageId(), req.GetUserId())
 	ev, err := s.store.DeleteMessage(req.GetTopicId(), req.GetUserId(), req.GetMessageId())
 	if err != nil {
 		return nil, mapErr(err)
 	}
 	s.hub.Broadcast(ev)
+	s.logf("delete_message done seq=%d", ev.SequenceNumber)
 	return &emptypb.Empty{}, nil
 }
 
 func (s *Services) LikeMessage(ctx context.Context, req *pb.LikeMessageRequest) (*pb.Message, error) {
+	s.logf("like_message topic=%d id=%d user=%d", req.GetTopicId(), req.GetMessageId(), req.GetUserId())
 	msg, ev, err := s.store.LikeMessage(req.GetTopicId(), req.GetMessageId(), req.GetUserId())
 	if err != nil {
 		return nil, mapErr(err)
@@ -98,6 +114,7 @@ func (s *Services) LikeMessage(ctx context.Context, req *pb.LikeMessageRequest) 
 	if ev.SequenceNumber != 0 { // only broadcast if like is not duplicate
 		s.hub.Broadcast(ev)
 	}
+	s.logf("like_message done seq=%d duplicate=%v", ev.SequenceNumber, ev.SequenceNumber == 0)
 	return toProtoMessage(msg), nil
 }
 
@@ -106,6 +123,7 @@ func (s *Services) GetSubscriptionNode(ctx context.Context, req *pb.Subscription
 	if err != nil {
 		return nil, mapErr(err)
 	}
+	s.logf("subscription_token issued user=%d topics=%v node=%s", req.GetUserId(), req.GetTopicId(), s.nodeID)
 	return &pb.SubscriptionNodeResponse{
 		SubscribeToken: tok,
 		Node:           &pb.NodeInfo{NodeId: s.nodeID, Address: s.advertiseAddr},
@@ -118,6 +136,7 @@ func (s *Services) ListTopics(ctx context.Context, _ *emptypb.Empty) (*pb.ListTo
 	for _, t := range topics {
 		res = append(res, &pb.Topic{Id: t.ID, Name: t.Name})
 	}
+	s.logf("list_topics count=%d", len(res))
 	return &pb.ListTopicsResponse{Topics: res}, nil
 }
 
@@ -130,6 +149,7 @@ func (s *Services) GetMessages(ctx context.Context, req *pb.GetMessagesRequest) 
 	for _, m := range msgs {
 		res = append(res, toProtoMessage(m))
 	}
+	s.logf("get_messages topic=%d from=%d limit=%d returned=%d", req.GetTopicId(), req.GetFromMessageId(), req.GetLimit(), len(res))
 	return &pb.GetMessagesResponse{Messages: res}, nil
 }
 
@@ -150,12 +170,14 @@ func (s *Services) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Messa
 	if fromMessageID < 0 {
 		return status.Error(codes.InvalidArgument, "from_message_id must be >= 0")
 	}
+	s.logf("subscribe start user=%d topics=%v from=%d", req.GetUserId(), req.GetTopicId(), fromMessageID)
 
 	_, ch, remove := s.hub.Add(req.GetTopicId())
 	defer remove()
 
 	watermark := s.store.CurrentSequence()
 	backlog := s.store.EventsBetween(0, watermark)
+	s.logf("subscribe backlog events=%d watermark=%d", len(backlog), watermark)
 
 	topicSet := make(map[int64]struct{}, len(req.GetTopicId()))
 	for _, tid := range req.GetTopicId() {
@@ -209,6 +231,7 @@ func (s *Services) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Messa
 
 func (s *Services) GetClusterState(ctx context.Context, _ *emptypb.Empty) (*pb.GetClusterStateResponse, error) {
 	n := &pb.NodeInfo{NodeId: s.nodeID, Address: s.advertiseAddr}
+	s.logf("cluster_state single_node head/tail=%s", s.nodeID)
 	return &pb.GetClusterStateResponse{Head: n, Tail: n}, nil
 }
 

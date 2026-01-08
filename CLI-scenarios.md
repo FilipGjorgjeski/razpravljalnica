@@ -1,6 +1,10 @@
 # CLI scenario recipes
 Chains of commands to exercise features end-to-end. Assumes binaries built (or use `go run` equivalents) and default control plane address `127.0.0.1:50050`.
 
+Targeting specific nodes:
+- Add `--addr <nodeAddr>` to force data-plane RPCs to a node (reads/writes/subs). The control-plane address remains `--control-plane`.
+- Add `--no-redirect` to suppress auto-redirects to head when writing; useful to demo failures on non-head nodes.
+
 ## 0) Build binaries (once)
 ```
 go build -o bin/razcli ./cmd/razcli
@@ -44,6 +48,9 @@ bin/razcli message post --topic 1 --user 1 --text "from head"
 
 # list via tail (n2)
 bin/razcli message list --topic 1 --from 0 --limit 20
+
+# optionally force read against head or middle to demo forwarding/dirty handling
+# bin/razcli --addr 127.0.0.1:6001 message list --topic 1 --from 0 --limit 20
 ```
 
 ## 4) Update/delete permissions check
@@ -69,6 +76,9 @@ bin/razcli subscribe --topics 1 --user 1 --from 0
 # in another terminal, produce events
 bin/razcli message post --topic 1 --user 1 --text "sub event 1"
 bin/razcli message like --topic 1 --user 1 --id 2
+
+# to force subscription via a specific node (e.g., n2) and see assignment/commit logs
+# bin/razcli --addr 127.0.0.1:6002 subscribe --topics 1 --user 1 --from 0
 ```
 
 ## 6) Topic listing and pagination
@@ -98,6 +108,9 @@ bin/razcli cluster --watch-for 10s
 
 # restart n2; it will auto-promote after catch-up
 go run ./cmd/razpravljalnica-node --node-id n2 --listen 127.0.0.1:6002 --advertise 127.0.0.1:6002 --control-plane 127.0.0.1:50050
+
+# to demo failed write against non-head
+# bin/razcli --addr 127.0.0.1:6002 --no-redirect message post --topic 1 --user 1 --text "should fail (not head)"
 ```
 
 Notes:

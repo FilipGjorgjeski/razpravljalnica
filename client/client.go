@@ -24,24 +24,34 @@ type ClusterState struct {
 }
 
 type Client struct {
-	cpAddr string
-	cpConn *grpc.ClientConn
-	cp     pb.ControlPlaneClient
+	cpAddr       string
+	cpConn       *grpc.ClientConn
+	cp           pb.ControlPlaneClient
+	overrideAddr string
+	noRedirect   bool
 
 	mu    sync.RWMutex
 	state ClusterState
 }
 
 func New(controlPlaneAddr string) (*Client, error) {
+	return NewWithTarget(controlPlaneAddr, "", false)
+}
+
+// NewWithTarget optionally forces all message-board RPCs to a specific address.
+// When noRedirect is true, redirect handling is disabled (useful for testing failures against non-head nodes).
+func NewWithTarget(controlPlaneAddr, targetAddr string, noRedirect bool) (*Client, error) {
 	conn, err := grpc.NewClient(controlPlaneAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		cpAddr: controlPlaneAddr,
-		cpConn: conn,
-		cp:     pb.NewControlPlaneClient(conn),
+		cpAddr:       controlPlaneAddr,
+		cpConn:       conn,
+		cp:           pb.NewControlPlaneClient(conn),
+		overrideAddr: strings.TrimSpace(targetAddr),
+		noRedirect:   noRedirect,
 	}, nil
 }
 
@@ -135,6 +145,9 @@ func (c *Client) dialMessageBoard(addr string) (*grpc.ClientConn, pb.MessageBoar
 func (c *Client) headAddr() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.overrideAddr != "" {
+		return c.overrideAddr
+	}
 	if c.state.Head != nil {
 		return c.state.Head.Address
 	}
@@ -144,6 +157,9 @@ func (c *Client) headAddr() string {
 func (c *Client) tailAddr() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.overrideAddr != "" {
+		return c.overrideAddr
+	}
 	if c.state.Tail != nil {
 		return c.state.Tail.Address
 	}
@@ -169,7 +185,11 @@ func (c *Client) CreateUser(ctx context.Context, name, requestID string) (*pb.Us
 		requestID = RequestID()
 	}
 
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if c.overrideAddr != "" && c.noRedirect {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		addr := c.headAddr()
 		if addr == "" {
 			if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -189,6 +209,9 @@ func (c *Client) CreateUser(ctx context.Context, name, requestID string) (*pb.Us
 		if err == nil {
 			return resp, nil
 		}
+		if c.noRedirect {
+			return nil, err
+		}
 		if redir := parseHeadRedirect(err); redir != "" {
 			c.mu.Lock()
 			c.state.Head = &pb.NodeInfo{Address: redir}
@@ -204,8 +227,11 @@ func (c *Client) CreateTopic(ctx context.Context, name, requestID string) (*pb.T
 	if requestID == "" {
 		requestID = RequestID()
 	}
-
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if c.overrideAddr != "" && c.noRedirect {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		addr := c.headAddr()
 		if addr == "" {
 			if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -225,6 +251,9 @@ func (c *Client) CreateTopic(ctx context.Context, name, requestID string) (*pb.T
 		if err == nil {
 			return resp, nil
 		}
+		if c.noRedirect {
+			return nil, err
+		}
 		if redir := parseHeadRedirect(err); redir != "" {
 			c.mu.Lock()
 			c.state.Head = &pb.NodeInfo{Address: redir}
@@ -240,8 +269,11 @@ func (c *Client) PostMessage(ctx context.Context, topicID, userID int64, text, r
 	if requestID == "" {
 		requestID = RequestID()
 	}
-
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if c.overrideAddr != "" && c.noRedirect {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		addr := c.headAddr()
 		if addr == "" {
 			if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -261,6 +293,9 @@ func (c *Client) PostMessage(ctx context.Context, topicID, userID int64, text, r
 		if err == nil {
 			return resp, nil
 		}
+		if c.noRedirect {
+			return nil, err
+		}
 		if redir := parseHeadRedirect(err); redir != "" {
 			c.mu.Lock()
 			c.state.Head = &pb.NodeInfo{Address: redir}
@@ -276,8 +311,11 @@ func (c *Client) UpdateMessage(ctx context.Context, topicID, userID, messageID i
 	if requestID == "" {
 		requestID = RequestID()
 	}
-
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if c.overrideAddr != "" && c.noRedirect {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		addr := c.headAddr()
 		if addr == "" {
 			if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -297,6 +335,9 @@ func (c *Client) UpdateMessage(ctx context.Context, topicID, userID, messageID i
 		if err == nil {
 			return resp, nil
 		}
+		if c.noRedirect {
+			return nil, err
+		}
 		if redir := parseHeadRedirect(err); redir != "" {
 			c.mu.Lock()
 			c.state.Head = &pb.NodeInfo{Address: redir}
@@ -312,8 +353,11 @@ func (c *Client) DeleteMessage(ctx context.Context, topicID, userID, messageID i
 	if requestID == "" {
 		requestID = RequestID()
 	}
-
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if c.overrideAddr != "" && c.noRedirect {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		addr := c.headAddr()
 		if addr == "" {
 			if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -333,6 +377,9 @@ func (c *Client) DeleteMessage(ctx context.Context, topicID, userID, messageID i
 		if err == nil {
 			return nil
 		}
+		if c.noRedirect {
+			return err
+		}
 		if redir := parseHeadRedirect(err); redir != "" {
 			c.mu.Lock()
 			c.state.Head = &pb.NodeInfo{Address: redir}
@@ -348,8 +395,11 @@ func (c *Client) LikeMessage(ctx context.Context, topicID, messageID, userID int
 	if requestID == "" {
 		requestID = RequestID()
 	}
-
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if c.overrideAddr != "" && c.noRedirect {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		addr := c.headAddr()
 		if addr == "" {
 			if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -368,6 +418,9 @@ func (c *Client) LikeMessage(ctx context.Context, topicID, messageID, userID int
 		_ = conn.Close()
 		if err == nil {
 			return resp, nil
+		}
+		if c.noRedirect {
+			return nil, err
 		}
 		if redir := parseHeadRedirect(err); redir != "" {
 			c.mu.Lock()
