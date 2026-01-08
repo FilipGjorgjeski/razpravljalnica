@@ -303,11 +303,11 @@ func (s *Storage) LikeMessage(topicID, messageID, userID int64) (Message, Event,
 	return msg, ev, nil
 }
 
-func (s *Storage) GetMessages(topicID, fromMessageID int64, limit int32) ([]Message, error) {
+func (s *Storage) GetMessages(topicID, fromOrdinal int64, limit int32) ([]Message, error) {
 	if topicID <= 0 {
 		return nil, ErrInvalidArgument
 	}
-	if fromMessageID < 0 {
+	if fromOrdinal < 0 {
 		return nil, ErrInvalidArgument
 	}
 	if limit < 0 {
@@ -322,17 +322,19 @@ func (s *Storage) GetMessages(topicID, fromMessageID int64, limit int32) ([]Mess
 	}
 
 	ids := s.byTopic[topicID]
+	if int(fromOrdinal) > len(ids) {
+		fromOrdinal = int64(len(ids))
+	}
+
 	res := make([]Message, 0, 32)
-	for _, id := range ids {
-		if id < fromMessageID {
-			continue
-		}
+	for i := fromOrdinal; i < int64(len(ids)); i++ {
+		id := ids[i]
 		msg := s.messages[id]
 		if msg.Deleted {
 			continue
 		}
 		res = append(res, msg)
-		if limit > 0 && int32(len(res)) >= limit { // we treat limit=0 as unlimited (return all messages)
+		if limit > 0 && int32(len(res)) >= limit { // limit=0 means all
 			break
 		}
 	}

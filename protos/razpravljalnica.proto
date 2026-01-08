@@ -181,6 +181,12 @@ service ControlPlane {
   // Nodes call this periodically. Response contains current chain membership
   // and this node's role + neighbors.
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Adds a node to the desired chain (pending activation). Returns current tail for bootstrapping.
+  rpc AddNode(AddNodeRequest) returns (AddNodeResponse);
+
+  // Activates a previously added node after it has synced. Appends it to the chain and bumps config_version.
+  rpc ActivateNode(ActivateNodeRequest) returns (GetClusterStateResponse);
 }
 
 message WatchClusterStateRequest {
@@ -221,6 +227,19 @@ message HeartbeatResponse {
   NodeInfo predecessor = 5;
   NodeInfo successor = 6;
   repeated NodeInfo chain = 7; // head..tail
+}
+
+message AddNodeRequest {
+  string node_id = 1;
+  string address = 2;
+}
+
+message AddNodeResponse {
+  NodeInfo current_tail = 1; // nil if no tail exists yet
+}
+
+message ActivateNodeRequest {
+  string node_id = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

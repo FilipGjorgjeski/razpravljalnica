@@ -491,6 +491,8 @@ const (
 	ControlPlane_GetClusterState_FullMethodName   = "/razpravljalnica.ControlPlane/GetClusterState"
 	ControlPlane_WatchClusterState_FullMethodName = "/razpravljalnica.ControlPlane/WatchClusterState"
 	ControlPlane_Heartbeat_FullMethodName         = "/razpravljalnica.ControlPlane/Heartbeat"
+	ControlPlane_AddNode_FullMethodName           = "/razpravljalnica.ControlPlane/AddNode"
+	ControlPlane_ActivateNode_FullMethodName      = "/razpravljalnica.ControlPlane/ActivateNode"
 )
 
 // ControlPlaneClient is the client API for ControlPlane service.
@@ -506,6 +508,10 @@ type ControlPlaneClient interface {
 	// Nodes call this periodically. Response contains current chain membership
 	// and this node's role + neighbors.
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
+	// Adds a node to the desired chain (pending activation). Returns current tail for bootstrapping.
+	AddNode(ctx context.Context, in *AddNodeRequest, opts ...grpc.CallOption) (*AddNodeResponse, error)
+	// Activates a previously added node after it has synced. Appends it to the chain and bumps config_version.
+	ActivateNode(ctx context.Context, in *ActivateNodeRequest, opts ...grpc.CallOption) (*GetClusterStateResponse, error)
 }
 
 type controlPlaneClient struct {
@@ -555,6 +561,26 @@ func (c *controlPlaneClient) Heartbeat(ctx context.Context, in *HeartbeatRequest
 	return out, nil
 }
 
+func (c *controlPlaneClient) AddNode(ctx context.Context, in *AddNodeRequest, opts ...grpc.CallOption) (*AddNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddNodeResponse)
+	err := c.cc.Invoke(ctx, ControlPlane_AddNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlPlaneClient) ActivateNode(ctx context.Context, in *ActivateNodeRequest, opts ...grpc.CallOption) (*GetClusterStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetClusterStateResponse)
+	err := c.cc.Invoke(ctx, ControlPlane_ActivateNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControlPlaneServer is the server API for ControlPlane service.
 // All implementations must embed UnimplementedControlPlaneServer
 // for forward compatibility.
@@ -568,6 +594,10 @@ type ControlPlaneServer interface {
 	// Nodes call this periodically. Response contains current chain membership
 	// and this node's role + neighbors.
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
+	// Adds a node to the desired chain (pending activation). Returns current tail for bootstrapping.
+	AddNode(context.Context, *AddNodeRequest) (*AddNodeResponse, error)
+	// Activates a previously added node after it has synced. Appends it to the chain and bumps config_version.
+	ActivateNode(context.Context, *ActivateNodeRequest) (*GetClusterStateResponse, error)
 	mustEmbedUnimplementedControlPlaneServer()
 }
 
@@ -586,6 +616,12 @@ func (UnimplementedControlPlaneServer) WatchClusterState(*WatchClusterStateReque
 }
 func (UnimplementedControlPlaneServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedControlPlaneServer) AddNode(context.Context, *AddNodeRequest) (*AddNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddNode not implemented")
+}
+func (UnimplementedControlPlaneServer) ActivateNode(context.Context, *ActivateNodeRequest) (*GetClusterStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ActivateNode not implemented")
 }
 func (UnimplementedControlPlaneServer) mustEmbedUnimplementedControlPlaneServer() {}
 func (UnimplementedControlPlaneServer) testEmbeddedByValue()                      {}
@@ -655,6 +691,42 @@ func _ControlPlane_Heartbeat_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControlPlane_AddNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServer).AddNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlane_AddNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServer).AddNode(ctx, req.(*AddNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControlPlane_ActivateNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActivateNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServer).ActivateNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlane_ActivateNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServer).ActivateNode(ctx, req.(*ActivateNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControlPlane_ServiceDesc is the grpc.ServiceDesc for ControlPlane service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -669,6 +741,14 @@ var ControlPlane_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Heartbeat",
 			Handler:    _ControlPlane_Heartbeat_Handler,
+		},
+		{
+			MethodName: "AddNode",
+			Handler:    _ControlPlane_AddNode_Handler,
+		},
+		{
+			MethodName: "ActivateNode",
+			Handler:    _ControlPlane_ActivateNode_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

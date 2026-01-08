@@ -173,7 +173,6 @@ func (s *Services) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Messa
 		streamSeq++
 		return stream.Send(ev)
 	}
-
 	for _, ev := range backlog {
 		if _, ok := topicSet[ev.Message.TopicID]; !ok {
 			continue

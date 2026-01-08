@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -271,6 +272,78 @@ func (c *Client) PostMessage(ctx context.Context, topicID, userID int64, text, r
 	return nil, context.DeadlineExceeded
 }
 
+func (c *Client) UpdateMessage(ctx context.Context, topicID, userID, messageID int64, text, requestID string) (*pb.Message, error) {
+	if requestID == "" {
+		requestID = RequestID()
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		addr := c.headAddr()
+		if addr == "" {
+			if _, err := c.RefreshClusterState(ctx); err != nil {
+				return nil, err
+			}
+			addr = c.headAddr()
+		}
+
+		conn, mb, err := c.dialMessageBoard(addr)
+		if err != nil {
+			_, _ = c.RefreshClusterState(ctx)
+			continue
+		}
+
+		resp, err := mb.UpdateMessage(ctx, &pb.UpdateMessageRequest{TopicId: topicID, UserId: userID, MessageId: messageID, Text: text, RequestId: requestID})
+		_ = conn.Close()
+		if err == nil {
+			return resp, nil
+		}
+		if redir := parseHeadRedirect(err); redir != "" {
+			c.mu.Lock()
+			c.state.Head = &pb.NodeInfo{Address: redir}
+			c.mu.Unlock()
+			continue
+		}
+		return nil, err
+	}
+	return nil, context.DeadlineExceeded
+}
+
+func (c *Client) DeleteMessage(ctx context.Context, topicID, userID, messageID int64, requestID string) error {
+	if requestID == "" {
+		requestID = RequestID()
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		addr := c.headAddr()
+		if addr == "" {
+			if _, err := c.RefreshClusterState(ctx); err != nil {
+				return err
+			}
+			addr = c.headAddr()
+		}
+
+		conn, mb, err := c.dialMessageBoard(addr)
+		if err != nil {
+			_, _ = c.RefreshClusterState(ctx)
+			continue
+		}
+
+		_, err = mb.DeleteMessage(ctx, &pb.DeleteMessageRequest{TopicId: topicID, UserId: userID, MessageId: messageID, RequestId: requestID})
+		_ = conn.Close()
+		if err == nil {
+			return nil
+		}
+		if redir := parseHeadRedirect(err); redir != "" {
+			c.mu.Lock()
+			c.state.Head = &pb.NodeInfo{Address: redir}
+			c.mu.Unlock()
+			continue
+		}
+		return err
+	}
+	return context.DeadlineExceeded
+}
+
 func (c *Client) LikeMessage(ctx context.Context, topicID, messageID, userID int64, requestID string) (*pb.Message, error) {
 	if requestID == "" {
 		requestID = RequestID()
@@ -355,4 +428,64 @@ func (c *Client) GetMessages(ctx context.Context, topicID int64, fromMessageID i
 	defer func() { _ = conn.Close() }()
 
 	return mb.GetMessages(ctx, &pb.GetMessagesRequest{TopicId: topicID, FromMessageId: fromMessageID, Limit: limit})
+}
+
+func (c *Client) Subscribe(ctx context.Context, topics []int64, userID int64, fromMessageID int64, handler func(*pb.MessageEvent) error) error {
+	if len(topics) == 0 {
+		return errors.New("at least one topic_id is required")
+	}
+	if userID <= 0 {
+		return errors.New("user_id must be positive")
+	}
+
+	addr := c.headAddr()
+	if addr == "" {
+		if _, err := c.RefreshClusterState(ctx); err != nil {
+			return err
+		}
+		addr = c.headAddr()
+	}
+
+	headConn, headMB, err := c.dialMessageBoard(addr)
+	if err != nil {
+		return err
+	}
+	subNode, err := headMB.GetSubscriptionNode(ctx, &pb.SubscriptionNodeRequest{UserId: userID, TopicId: topics})
+	_ = headConn.Close()
+	if err != nil {
+		return err
+	}
+
+	target := subNode.GetNode().GetAddress()
+	if strings.TrimSpace(target) == "" {
+		return errors.New("subscription node address missing")
+	}
+
+	subConn, subMB, err := c.dialMessageBoard(target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = subConn.Close() }()
+
+	stream, err := subMB.SubscribeTopic(ctx, &pb.SubscribeTopicRequest{
+		TopicId:        topics,
+		UserId:         userID,
+		FromMessageId:  fromMessageID,
+		SubscribeToken: subNode.GetSubscribeToken(),
+	})
+	if err != nil {
+		return err
+	}
+
+	for {
+		ev, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if handler != nil {
+			if err := handler(ev); err != nil {
+				return err
+			}
+		}
+	}
 }

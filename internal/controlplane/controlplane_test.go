@@ -115,3 +115,63 @@ func TestControlPlane_WatchClusterStatePushesUpdates(t *testing.T) {
 	require.NotNil(t, upd.GetTail())
 	require.Len(t, upd.GetChain(), 2)
 }
+
+func TestControlPlane_AddAndActivateNode(t *testing.T) {
+	s := New(Config{ChainOrder: []string{"n1", "n2"}, HeartbeatTimeout: 5 * time.Second})
+	ctx := context.Background()
+
+	_, err := s.Heartbeat(ctx, &pb.HeartbeatRequest{NodeId: "n1", Address: "127.0.0.1:1111"})
+	require.NoError(t, err)
+	_, err = s.Heartbeat(ctx, &pb.HeartbeatRequest{NodeId: "n2", Address: "127.0.0.1:2222"})
+	require.NoError(t, err)
+
+	resp, err := s.AddNode(ctx, &pb.AddNodeRequest{NodeId: "n3", Address: "127.0.0.1:3333"})
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetCurrentTail())
+	require.Equal(t, "n2", resp.GetCurrentTail().GetNodeId())
+
+	state, err := s.GetClusterState(ctx, &emptypb.Empty{})
+	require.NoError(t, err)
+	require.Len(t, state.GetChain(), 2)
+
+	// Activate after node is presumed synced.
+	act, err := s.ActivateNode(ctx, &pb.ActivateNodeRequest{NodeId: "n3"})
+	require.NoError(t, err)
+	require.Equal(t, "n1", act.GetHead().GetNodeId())
+	require.Equal(t, "n3", act.GetTail().GetNodeId())
+	require.Len(t, act.GetChain(), 3)
+
+	// Idempotent activate should succeed and keep chain length.
+	act2, err := s.ActivateNode(ctx, &pb.ActivateNodeRequest{NodeId: "n3"})
+	require.NoError(t, err)
+	require.Len(t, act2.GetChain(), 3)
+}
+
+func TestControlPlane_AutoPromotePendingNodeOnCatchup(t *testing.T) {
+	s := New(Config{ChainOrder: []string{"n1", "n2"}, HeartbeatTimeout: 5 * time.Second})
+	ctx := context.Background()
+
+	// Seed chain with head and tail statuses.
+	_, err := s.Heartbeat(ctx, &pb.HeartbeatRequest{NodeId: "n1", Address: "127.0.0.1:1111", Status: &pb.NodeStatus{LastApplied: 5, LastCommitted: 5}})
+	require.NoError(t, err)
+	_, err = s.Heartbeat(ctx, &pb.HeartbeatRequest{NodeId: "n2", Address: "127.0.0.1:2222", Status: &pb.NodeStatus{LastApplied: 5, LastCommitted: 5}})
+	require.NoError(t, err)
+
+	// Add a new node; it becomes pending.
+	_, err = s.AddNode(ctx, &pb.AddNodeRequest{NodeId: "n3", Address: "127.0.0.1:3333"})
+	require.NoError(t, err)
+
+	state, err := s.GetClusterState(ctx, &emptypb.Empty{})
+	require.NoError(t, err)
+	require.Len(t, state.GetChain(), 2)
+	require.Equal(t, "n2", state.GetTail().GetNodeId())
+
+	// Once n3 reports it has caught up to the tail's committed seq, it should auto-promote.
+	_, err = s.Heartbeat(ctx, &pb.HeartbeatRequest{NodeId: "n3", Address: "127.0.0.1:3333", Status: &pb.NodeStatus{LastApplied: 5, LastCommitted: 5}})
+	require.NoError(t, err)
+
+	stateAfter, err := s.GetClusterState(ctx, &emptypb.Empty{})
+	require.NoError(t, err)
+	require.Len(t, stateAfter.GetChain(), 3)
+	require.Equal(t, "n3", stateAfter.GetTail().GetNodeId())
+}

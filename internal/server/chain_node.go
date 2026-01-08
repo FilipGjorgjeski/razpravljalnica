@@ -908,7 +908,6 @@ func (n *ChainNode) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Mess
 		streamSeq++
 		return stream.Send(ev)
 	}
-
 	for _, ev := range backlog {
 		if _, ok := topicSet[ev.Message.TopicID]; !ok {
 			continue
@@ -920,7 +919,6 @@ func (n *ChainNode) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Mess
 			return err
 		}
 	}
-
 	for {
 		select {
 		case <-stream.Context().Done():

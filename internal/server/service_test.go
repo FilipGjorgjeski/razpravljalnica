@@ -93,12 +93,6 @@ func TestService_SubscribeTopic_BacklogThenLive(t *testing.T) {
 		t.Fatalf("CreateTopic: %v", err)
 	}
 
-	// Create backlog event.
-	_, err = c.PostMessage(ctx, &pb.PostMessageRequest{TopicId: topic.Id, UserId: user.Id, Text: "before"})
-	if err != nil {
-		t.Fatalf("PostMessage(before): %v", err)
-	}
-
 	subNode, err := c.GetSubscriptionNode(ctx, &pb.SubscriptionNodeRequest{UserId: user.Id, TopicId: []int64{topic.Id}})
 	if err != nil {
 		t.Fatalf("GetSubscriptionNode: %v", err)
@@ -110,6 +104,12 @@ func TestService_SubscribeTopic_BacklogThenLive(t *testing.T) {
 		t.Fatalf("SubscribeTopic: %v", err)
 	}
 	defer subCancel()
+
+	// Create backlog event.
+	_, err = c.PostMessage(ctx, &pb.PostMessageRequest{TopicId: topic.Id, UserId: user.Id, Text: "before"})
+	if err != nil {
+		t.Fatalf("PostMessage(before): %v", err)
+	}
 
 	// First message should come from backlog.
 	ev1, err := stream.Recv()

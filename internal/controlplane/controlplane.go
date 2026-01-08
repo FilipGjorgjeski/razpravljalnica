@@ -10,7 +10,9 @@ import (
 
 	pb "github.com/FilipGjorgjeski/razpravljalnica/protos"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -60,6 +62,7 @@ type Server struct {
 	nodes     map[string]*nodeRuntime
 	configVer int64
 	lastSig   string
+	pending   map[string]*pb.NodeInfo
 
 	watchMu     sync.Mutex
 	nextWatchID int64
@@ -70,7 +73,7 @@ func New(cfg Config) *Server {
 	if cfg.HeartbeatTimeout <= 0 {
 		cfg.HeartbeatTimeout = 3 * time.Second
 	}
-	return &Server{cfg: cfg, nodes: map[string]*nodeRuntime{}, watchers: map[int64]chan *pb.GetClusterStateResponse{}}
+	return &Server{cfg: cfg, nodes: map[string]*nodeRuntime{}, pending: map[string]*pb.NodeInfo{}, watchers: map[int64]chan *pb.GetClusterStateResponse{}}
 }
 
 func (s *Server) Register(gs *grpc.Server) {
@@ -106,9 +109,13 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 	rt.info = &pb.NodeInfo{NodeId: id, Address: addr}
 	rt.status = req.GetStatus()
 	rt.lastSeenAt = now
+
+	// Promote any pending nodes that have caught up to the current tail's committed seq.
+	changed := s.promotePendingLocked(now)
 	s.mu.Unlock()
 
-	chain, head, tail, ver, changed := s.computeChain(now)
+	chain, head, tail, ver, computeChanged := s.computeChain(now)
+	changed = changed || computeChanged
 	role, pred, succ := roleAndNeighbors(id, chain)
 	if changed {
 		s.broadcastClusterState(&pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver})
@@ -132,6 +139,118 @@ func (s *Server) GetClusterState(ctx context.Context, _ *emptypb.Empty) (*pb.Get
 		s.broadcastClusterState(&pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver})
 	}
 	return &pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver}, nil
+}
+
+// AddNode records a node as pending so it can bootstrap from the current tail.
+func (s *Server) AddNode(ctx context.Context, req *pb.AddNodeRequest) (*pb.AddNodeResponse, error) {
+	id := strings.TrimSpace(req.GetNodeId())
+	addr := strings.TrimSpace(req.GetAddress())
+	if id == "" || addr == "" {
+		return nil, status.Error(codes.InvalidArgument, "node_id and address required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, existing := range s.cfg.ChainOrder {
+		if existing == id {
+			return nil, status.Error(codes.AlreadyExists, "node already in chain order")
+		}
+	}
+	if _, ok := s.pending[id]; ok {
+		return nil, status.Error(codes.AlreadyExists, "node already pending")
+	}
+
+	s.pending[id] = &pb.NodeInfo{NodeId: id, Address: addr}
+	// Remember the address so the node runtime is discoverable before its first heartbeat.
+	rt := s.nodes[id]
+	if rt == nil {
+		rt = &nodeRuntime{}
+		s.nodes[id] = rt
+	}
+	rt.info = &pb.NodeInfo{NodeId: id, Address: addr}
+
+	// If the node is already alive and caught up, promote immediately.
+	now := time.Now().UTC()
+	_ = s.promotePendingLocked(now)
+
+	return s.currentTailLocked(), nil
+}
+
+// ActivateNode appends a pending node to the chain order after it has synced.
+func (s *Server) ActivateNode(ctx context.Context, req *pb.ActivateNodeRequest) (*pb.GetClusterStateResponse, error) {
+	id := strings.TrimSpace(req.GetNodeId())
+	if id == "" {
+		return nil, status.Error(codes.InvalidArgument, "node_id required")
+	}
+
+	s.mu.Lock()
+	info, ok := s.pending[id]
+	if !ok {
+		// If already in chain, treat as idempotent success.
+		for _, existing := range s.cfg.ChainOrder {
+			if existing == id {
+				s.mu.Unlock()
+				return s.GetClusterState(ctx, &emptypb.Empty{})
+			}
+		}
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "node not pending")
+	}
+	s.cfg.ChainOrder = append(s.cfg.ChainOrder, id)
+	delete(s.pending, id)
+	// Ensure runtime exists and is considered alive immediately after activation.
+	rt := s.nodes[id]
+	if rt == nil {
+		rt = &nodeRuntime{}
+		s.nodes[id] = rt
+	}
+	if info != nil {
+		rt.info = info
+	}
+	rt.lastSeenAt = time.Now().UTC()
+	s.mu.Unlock()
+
+	now := time.Now().UTC()
+	chain, head, tail, ver, changed := s.computeChain(now)
+	resp := &pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver}
+	if changed {
+		s.broadcastClusterState(resp)
+	}
+
+	// Ensure we have the latest address from pending info if the node hasn't heartbeated yet.
+	if info != nil {
+		for i := range chain {
+			if chain[i] != nil && chain[i].GetNodeId() == info.NodeId && chain[i].GetAddress() == "" {
+				chain[i].Address = info.Address
+			}
+		}
+	}
+	return resp, nil
+}
+
+// currentTailLocked returns the current tail info while holding s.mu.
+func (s *Server) currentTailLocked() *pb.AddNodeResponse {
+	now := time.Now().UTC()
+
+	alive := func(n *nodeRuntime) bool {
+		if n == nil || n.info == nil {
+			return false
+		}
+		return now.Sub(n.lastSeenAt) <= s.cfg.HeartbeatTimeout
+	}
+
+	var tailInfo *pb.NodeInfo
+	for i := len(s.cfg.ChainOrder) - 1; i >= 0; i-- {
+		id := s.cfg.ChainOrder[i]
+		rt := s.nodes[id]
+		if !alive(rt) {
+			continue
+		}
+		tailInfo = rt.info
+		break
+	}
+	return &pb.AddNodeResponse{CurrentTail: tailInfo}
 }
 
 func (s *Server) WatchClusterState(req *pb.WatchClusterStateRequest, stream pb.ControlPlane_WatchClusterStateServer) error {
@@ -237,6 +356,45 @@ func (s *Server) computeChain(now time.Time) (chain []*pb.NodeInfo, head *pb.Nod
 		changed = true
 	}
 	return chain, head, tail, s.configVer, changed
+}
+
+// promotePendingLocked appends any pending nodes that have caught up to the current tail.
+// Caller must hold s.mu.
+func (s *Server) promotePendingLocked(now time.Time) bool {
+	if len(s.pending) == 0 {
+		return false
+	}
+
+	alive := func(n *nodeRuntime) bool {
+		if n == nil || n.info == nil {
+			return false
+		}
+		return now.Sub(n.lastSeenAt) <= s.cfg.HeartbeatTimeout
+	}
+
+	promoted := false
+	for id, info := range s.pending {
+		rt := s.nodes[id]
+		if !alive(rt) {
+			continue
+		}
+		// Append to desired chain order if not already present.
+		exists := false
+		for _, existing := range s.cfg.ChainOrder {
+			if existing == id {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			s.cfg.ChainOrder = append(s.cfg.ChainOrder, id)
+		}
+		// Ensure address is retained when the node later becomes active.
+		rt.info = info
+		delete(s.pending, id)
+		promoted = true
+	}
+	return promoted
 }
 
 func roleAndNeighbors(nodeID string, chain []*pb.NodeInfo) (role pb.ChainRole, pred *pb.NodeInfo, succ *pb.NodeInfo) {
