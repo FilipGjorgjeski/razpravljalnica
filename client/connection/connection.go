@@ -90,8 +90,9 @@ func (c *Connection) Status() string {
 
 func (c *Connection) handleError(err error) {
 	c.statusLock.Lock()
-	defer c.statusLock.Unlock()
-	c.status = fmt.Sprintf("Connection encountered error: %s", err)
+	c.status = fmt.Sprintf("Error: %s", err)
+	c.statusLock.Unlock()
+
 	c.displayUpdateFunc()
 }
 
@@ -178,18 +179,10 @@ func (c *Connection) GetTopics() []*razpravljalnica.Topic {
 	return c.topics
 }
 
-func (c *Connection) GetTopicMessages(topicId int64) []*razpravljalnica.Message {
+func (c *Connection) GetMessages() []*razpravljalnica.Message {
 	c.messagesLock.RLock()
 	defer c.messagesLock.RUnlock()
-	return slices.Collect(func(yield func(*razpravljalnica.Message) bool) {
-		for _, message := range c.messages {
-			if message.TopicId == topicId {
-				if !yield(message) {
-					return
-				}
-			}
-		}
-	})
+	return c.messages
 }
 
 func (c *Connection) GetUserById(userId int64) *razpravljalnica.User {
@@ -204,6 +197,44 @@ func (c *Connection) GetUserById(userId int64) *razpravljalnica.User {
 	}
 
 	return c.users[index]
+}
+
+func (c *Connection) FetchTopics() {
+	if !c.IsConnected() {
+		return
+	}
+	ctx, cancel := c.context()
+	defer cancel()
+
+	topics, err := c.grpcClient.ListTopics(ctx, nil)
+	if err != nil {
+		c.handleError(err)
+		return
+	}
+
+	c.topicsLock.Lock()
+	defer c.topicsLock.Unlock()
+	c.topics = topics.GetTopics()
+}
+
+func (c *Connection) FetchTopicMessages(topicID int64) {
+	if !c.IsConnected() {
+		return
+	}
+	ctx, cancel := c.context()
+	defer cancel()
+
+	messages, err := c.grpcClient.GetMessages(ctx, &razpravljalnica.GetMessagesRequest{
+		TopicId: topicID,
+	})
+	if err != nil {
+		c.handleError(err)
+		return
+	}
+
+	c.messagesLock.Lock()
+	defer c.messagesLock.Unlock()
+	c.messages = messages.GetMessages()
 }
 
 func (c *Connection) CreateUser(username string) *razpravljalnica.User {

@@ -91,7 +91,7 @@ func (d *Display) Update() {
 		connectionStatus: d.conn.Status(),
 	})
 
-	messages := d.conn.GetTopicMessages(d.selectedTopic.GetId())
+	messages := d.conn.GetMessages()
 
 	d.chat.Update(ChatData{
 		messages: messages,
@@ -115,6 +115,7 @@ func (d *Display) SetUsername(username string) {
 }
 
 func (d *Display) ToTopicMenu() {
+	d.conn.FetchTopics()
 	d.selectedMessage = nil
 	d.activeMode = TopicMenu
 	d.selectedTopic = &razpravljalnica.Topic{}
@@ -127,6 +128,7 @@ func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
 	d.selectedMessage = nil
 	if topic != nil {
 		d.selectedTopic = topic
+		d.conn.FetchTopicMessages(topic.Id)
 	}
 	d.activeMode = MessageList
 	d.chat.messageList.SetSelectable(true, false)

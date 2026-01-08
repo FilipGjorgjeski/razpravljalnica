@@ -22,7 +22,7 @@ func NewHeader() *Header {
 		SetCellSimple(0, 0, "Username:").
 		SetCellSimple(1, 0, "Connection status:")
 
-	grid := tview.NewGrid().SetRows(0).SetColumns(0, 50).
+	grid := tview.NewGrid().SetRows(0).SetColumns(0, 100).
 		AddItem(tview.NewTextView().SetDynamicColors(true).SetText(headerText), 0, 0, 1, 1, 0, 0, false).
 		AddItem(status, 0, 1, 1, 1, 0, 0, false)
 
