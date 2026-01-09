@@ -15,3 +15,6 @@ grpc:
 
 test:
 	go test -p 1 ./...
+
+build-razcli:
+	CGO_ENABLED=0 go build -o bin/razcli cmd/razcli/main.go
