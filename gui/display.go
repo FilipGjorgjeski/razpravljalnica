@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"context"
+	"slices"
 	"sync"
 
 	"github.com/FilipGjorgjeski/razpravljalnica/client"
@@ -31,6 +33,8 @@ type Display struct {
 
 	selectedTopic   *razpravljalnica.Topic
 	selectedMessage *razpravljalnica.Message
+
+	activeSubscriptionListeners []int64
 
 	lock sync.RWMutex
 
@@ -282,6 +286,7 @@ func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
 
 	if topic != nil {
 		go d.fetchAndUpdateMessageList(topic.Id)
+		go d.createSubscriptionListener(topic.Id)
 	}
 }
 
@@ -294,6 +299,7 @@ func (d *Display) ToMessageBox(selectedMessage *razpravljalnica.Message) {
 	} else {
 		d.activeMode = MessageEdit
 		d.selectedMessage = selectedMessage
+		d.chat.messageFormInput.SetText(selectedMessage.Text)
 	}
 	d.chat.messageForm.SetFocus(0)
 
@@ -365,6 +371,50 @@ func (d *Display) deleteMessage(messageId int64) {
 	}
 
 	d.Update()
+}
 
-	go d.fetchAndUpdateMessageList(d.selectedTopic.Id)
+func (d *Display) getMessageListIndex(id int64) int {
+	return slices.IndexFunc(d.messagesList, func(message *razpravljalnica.Message) bool {
+		return message.Id == id
+	})
+}
+
+func (d *Display) createSubscriptionListener(topicId int64) {
+	d.lock.Lock()
+	exists := slices.Contains(d.activeSubscriptionListeners, topicId)
+	d.lock.Unlock()
+	if exists {
+		return
+	}
+
+	ctx := context.Background()
+	err := d.client.Subscribe(ctx, []int64{topicId}, d.user.Id, 0, func(me *razpravljalnica.MessageEvent) error {
+		d.lock.Lock()
+		defer d.lock.Unlock()
+		// Chat window is not focused on this topic
+		if d.selectedTopic == nil || d.selectedTopic.GetId() != me.Message.GetTopicId() {
+			return nil
+		}
+
+		index := d.getMessageListIndex(me.Message.GetId())
+
+		switch me.Op {
+		case razpravljalnica.OpType_OP_POST:
+			if index == -1 {
+				d.messagesList = append(d.messagesList, me.Message)
+			}
+		case razpravljalnica.OpType_OP_UPDATE, razpravljalnica.OpType_OP_LIKE:
+			d.messagesList[index] = me.Message
+		case razpravljalnica.OpType_OP_DELETE:
+			d.messagesList = slices.Delete(d.messagesList, index, index+1)
+		}
+
+		d.Update()
+		return nil
+	})
+
+	if err != nil {
+		d.handleError(err)
+	}
+
 }
