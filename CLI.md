@@ -9,9 +9,44 @@ This document shows how to run every implemented RPC via the `razcli` command-li
   - Run in place: `go run ./cmd/razcli --help`
 - Control plane and nodes must be running and reachable. Default control-plane address: `127.0.0.1:50050`.
 
-Global flags (apply to all commands):
+Start control plane and nodes (example):
+```
+# control plane (choose seed IDs for the chain)
+go run ./cmd/razpravljalnica-control-plane --chain n1
+
+# node n1 (head/tail when alone)
+go run ./cmd/razpravljalnica-node \
+  --node-id n1 \
+  --listen 127.0.0.1:6001 \
+  --advertise 127.0.0.1:6001 \
+  --control-plane 127.0.0.1:50050
+
+# add and start another node (n2)
+bin/razcli node add --id n2 --addr 127.0.0.1:6002
+go run ./cmd/razpravljalnica-node \
+  --node-id n2 \
+  --listen 127.0.0.1:6002 \
+  --advertise 127.0.0.1:6002 \
+  --control-plane 127.0.0.1:50050
+```
+
+Global flags (apply to all razcli commands):
 - `--control-plane <addr>`: control plane gRPC address (default `127.0.0.1:50050`).
 - `--timeout <duration>`: per-RPC timeout (default `5s`).
+- `--addr <addr>`: force data-plane RPCs to a specific node (reads/writes/subs) instead of letting control-plane assign.
+- `--no-redirect`: when set, writes fail instead of redirecting if they hit a non-head node (useful for testing failures).
+- `--watch-for <duration>`: used with `cluster --watch-for` to stream cluster changes for the duration.
+
+Control-plane flags (`razpravljalnica-control-plane`):
+- `--chain <id[,id2,...]>`: initial chain node IDs (comma-separated). At least one ID required.
+- `--listen <addr>` (if present): address the control plane listens on (default `127.0.0.1:50050`).
+
+Node flags (`razpravljalnica-node`):
+- `--node-id <id>`: unique node identifier (required).
+- `--listen <addr>`: address the node binds to (required).
+- `--advertise <addr>`: address the node advertises to peers/clients (required; often same as listen).
+- `--control-plane <addr>`: control-plane gRPC address (required to join/heartbeat).
+- `--data-dir <path>` (if available): persistent state directory; defaults to in-memory or current working dir if not set.
 
 ## Cluster and control plane
 - Show current cluster state:

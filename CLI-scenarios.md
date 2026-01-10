@@ -1,6 +1,45 @@
 # CLI scenario recipes
 Chains of commands to exercise features end-to-end. Assumes binaries built (or use `go run` equivalents) and default control plane address `127.0.0.1:50050`.
 
+## Flag reference (razcli)
+- `--control-plane <addr>`: control-plane gRPC address (default `127.0.0.1:50050`).
+- `--addr <addr>`: force data-plane RPCs to a specific node (reads/writes/subs) instead of letting control-plane pick.
+- `--no-redirect`: make writes fail instead of redirecting when hitting a non-head node (demo/test failures).
+- `--timeout <duration>`: per-RPC timeout (default `5s`).
+- `--watch-for <duration>`: stream cluster changes for the given duration (used with `cluster --watch-for`).
+
+Control-plane flags (`razpravljalnica-control-plane`):
+- `--chain <id[,id2,...]>`: initial chain node IDs (comma-separated). Required.
+- `--listen <addr>` (if present): control-plane listen address (default `127.0.0.1:50050`).
+
+Node flags (`razpravljalnica-node`):
+- `--node-id <id>`: unique node identifier (required).
+- `--listen <addr>`: address the node binds to (required).
+- `--advertise <addr>`: address the node advertises to peers/clients (required; often same as listen).
+- `--control-plane <addr>`: control-plane gRPC address to join/heartbeat (required).
+- `--data-dir <path>` (if available): persistent state directory; defaults to in-memory or CWD if not set.
+
+## Start control plane and nodes
+```
+# control plane (choose seed IDs for the chain)
+go run ./cmd/razpravljalnica-control-plane --chain n1
+
+# node n1 (head/tail when alone)
+go run ./cmd/razpravljalnica-node \
+	--node-id n1 \
+	--listen 127.0.0.1:6001 \
+	--advertise 127.0.0.1:6001 \
+	--control-plane 127.0.0.1:50050
+
+# add n2 to the cluster and start it
+bin/razcli node add --id n2 --addr 127.0.0.1:6002
+go run ./cmd/razpravljalnica-node \
+	--node-id n2 \
+	--listen 127.0.0.1:6002 \
+	--advertise 127.0.0.1:6002 \
+	--control-plane 127.0.0.1:50050
+```
+
 Targeting specific nodes:
 - Add `--addr <nodeAddr>` to force data-plane RPCs to a node (reads/writes/subs). The control-plane address remains `--control-plane`.
 - Add `--no-redirect` to suppress auto-redirects to head when writing; useful to demo failures on non-head nodes.
