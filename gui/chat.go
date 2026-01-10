@@ -25,6 +25,22 @@ type ChatData struct {
 	messages []*razpravljalnica.Message
 }
 
+const controlsPlaceholderTop = `Razpravljalnica GUI
+`
+const controlsPlaceholderBottom = `Controls:
+- [yellow]Arrow keys[white]: navigation
+- [yellow]N[white]: Create new topic / message
+- [yellow]Enter[white]: Select topic / edit message
+- [yellow]L[white]: Like message
+- [yellow]DEL[white]: Delete message
+- [yellow]ESC[white]: Cancel / navigate back
+
+DEBUG:
+[yellow]Ctrl + R[white]: Trigger UI update
+`
+
+const noMessagesPlaceholder = `[yellow]N[white]: New message`
+
 func NewChat() *Chat {
 
 	table := StyleNormalTable(tview.NewTable()).SetSelectable(true, false).SetBorders(true)
@@ -34,8 +50,8 @@ func NewChat() *Chat {
 		SetFieldWidth(0).
 		SetAcceptanceFunc(tview.InputFieldMaxLength(100))
 
-	grid := tview.NewGrid().SetColumns(0).SetRows(0, 5).
-		AddItem(table, 0, 0, 1, 1, 0, 0, true)
+	grid := tview.NewGrid().SetColumns(0).SetRows(2, 0, 5).
+		AddItem(table, 1, 0, 1, 1, 0, 0, true)
 
 	chat := &Chat{
 		view:             grid,
@@ -70,6 +86,15 @@ func (c *Chat) GetView() tview.Primitive {
 }
 
 func (c *Chat) Update(data ChatData) {
+	if c.d.activeMode == UsernameSelection || c.d.activeMode == TopicMenu || c.d.activeMode == TopicNew {
+		c.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(controlsPlaceholderTop), 0, 0, 1, 1, 0, 0, false)
+		c.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(controlsPlaceholderBottom), 1, 0, 1, 1, 0, 0, true)
+		return
+	}
+
+	c.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(noMessagesPlaceholder), 0, 0, 1, 1, 0, 0, true)
+	c.view.AddItem(c.messageList, 1, 0, 1, 1, 0, 0, true)
+
 	c.messageList.Clear()
 
 	for i, message := range data.messages {
@@ -113,12 +138,12 @@ func (c *Chat) ResetMessageBox() {
 }
 
 func (c *Chat) HideAndResetMessageBox() {
-	c.view.AddItem(tview.NewBox(), 1, 0, 1, 1, 0, 0, false)
+	c.view.AddItem(tview.NewBox(), 2, 0, 1, 1, 0, 0, false)
 	c.ResetMessageBox()
 }
 
 func (c *Chat) ShowMessageBox() {
-	c.view.AddItem(c.messageForm, 1, 0, 1, 1, 0, 0, true)
+	c.view.AddItem(c.messageForm, 2, 0, 1, 1, 0, 0, true)
 }
 
 func (c *Chat) SetSelectable(value bool) {

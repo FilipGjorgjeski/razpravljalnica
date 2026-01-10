@@ -293,7 +293,14 @@ func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
 // Focus message box, editing message if provided
 func (d *Display) ToMessageBox(selectedMessage *razpravljalnica.Message) {
 	d.lock.Lock()
-	if selectedMessage == nil || selectedMessage.UserId != d.user.Id {
+
+	if selectedMessage != nil && selectedMessage.UserId != d.user.Id {
+		// Attempting to edit other person's message
+		d.lock.Unlock()
+		return
+	}
+
+	if selectedMessage == nil {
 		d.activeMode = MessageNew
 		d.selectedMessage = nil
 	} else {
