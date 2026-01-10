@@ -80,7 +80,7 @@ func (s *Services) PostMessage(ctx context.Context, req *pb.PostMessageRequest) 
 	}
 	s.hub.Broadcast(ev)
 	s.logf("post_message done id=%d seq=%d", msg.ID, ev.SequenceNumber)
-	return toProtoMessage(msg), nil
+	return toProtoMessage(msg, false), nil
 }
 
 func (s *Services) UpdateMessage(ctx context.Context, req *pb.UpdateMessageRequest) (*pb.Message, error) {
@@ -91,7 +91,7 @@ func (s *Services) UpdateMessage(ctx context.Context, req *pb.UpdateMessageReque
 	}
 	s.hub.Broadcast(ev)
 	s.logf("update_message done id=%d seq=%d", msg.ID, ev.SequenceNumber)
-	return toProtoMessage(msg), nil
+	return toProtoMessage(msg, s.store.IsMessageLikedByUser(req.MessageId, req.UserId)), nil
 }
 
 func (s *Services) DeleteMessage(ctx context.Context, req *pb.DeleteMessageRequest) (*emptypb.Empty, error) {
@@ -115,7 +115,7 @@ func (s *Services) LikeMessage(ctx context.Context, req *pb.LikeMessageRequest) 
 		s.hub.Broadcast(ev)
 	}
 	s.logf("like_message done seq=%d duplicate=%v", ev.SequenceNumber, ev.SequenceNumber == 0)
-	return toProtoMessage(msg), nil
+	return toProtoMessage(msg, true), nil
 }
 
 func (s *Services) GetSubscriptionNode(ctx context.Context, req *pb.SubscriptionNodeRequest) (*pb.SubscriptionNodeResponse, error) {
@@ -147,7 +147,7 @@ func (s *Services) GetMessages(ctx context.Context, req *pb.GetMessagesRequest) 
 	}
 	res := make([]*pb.Message, 0, len(msgs))
 	for _, m := range msgs {
-		res = append(res, toProtoMessage(m))
+		res = append(res, toProtoMessage(m, s.store.IsMessageLikedByUser(m.ID, req.UserId)))
 	}
 	s.logf("get_messages topic=%d from=%d limit=%d returned=%d", req.GetTopicId(), req.GetFromMessageId(), req.GetLimit(), len(res))
 	return &pb.GetMessagesResponse{Messages: res}, nil
@@ -189,7 +189,7 @@ func (s *Services) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Messa
 		ev := &pb.MessageEvent{
 			SequenceNumber: streamSeq,
 			Op:             op,
-			Message:        toProtoMessage(m),
+			Message:        toProtoMessage(m, s.store.IsMessageLikedByUser(m.ID, req.UserId)),
 			EventAt:        timestamppb.New(at),
 		}
 		streamSeq++
@@ -235,14 +235,15 @@ func (s *Services) GetClusterState(ctx context.Context, _ *emptypb.Empty) (*pb.G
 	return &pb.GetClusterStateResponse{Head: n, Tail: n}, nil
 }
 
-func toProtoMessage(m storage.Message) *pb.Message {
+func toProtoMessage(m storage.Message, messageLikedByUser bool) *pb.Message {
 	return &pb.Message{
-		Id:        m.ID,
-		TopicId:   m.TopicID,
-		UserId:    m.UserID,
-		Text:      m.Text,
-		CreatedAt: timestamppb.New(m.CreatedAt),
-		Likes:     m.Likes,
+		Id:          m.ID,
+		TopicId:     m.TopicID,
+		UserId:      m.UserID,
+		Text:        m.Text,
+		CreatedAt:   timestamppb.New(m.CreatedAt),
+		Likes:       m.Likes,
+		LikedByUser: messageLikedByUser,
 	}
 }
 

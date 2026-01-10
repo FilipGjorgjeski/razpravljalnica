@@ -29,7 +29,7 @@ type ChatData struct {
 func NewChat() *Chat {
 
 	table := tview.NewTable().SetSelectable(true, false).SetBorders(true).
-		SetSelectedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorWhite))
+		SetSelectedStyle(tcell.StyleDefault.Background(tcell.ColorDarkGray).Foreground(tcell.ColorWhite))
 
 	textInput := tview.NewInputField().
 		SetLabel("Message").
@@ -89,12 +89,17 @@ func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
 		SetExpansion(1).
 		SetReference(message)
 
-	likesCell := tview.NewTableCell(fmt.Sprintf("♥ %d", message.GetLikes()))
+	likesCell := tview.NewTableCell(fmt.Sprintf("♥ %d", message.GetLikes())).SetTextColor(tcell.ColorGray)
+
+	if message.LikedByUser {
+		likesCell.SetTextColor(tcell.ColorRed)
+	}
 
 	if c.d.selectedMessage != nil && c.d.selectedMessage.Id == message.Id {
 		dateCell.SetBackgroundColor(colorFieldSelected)
 		usernameCell.SetBackgroundColor(colorFieldSelected)
 		messageCell.SetBackgroundColor(colorFieldSelected)
+		likesCell.SetBackgroundColor(colorFieldSelected)
 	}
 
 	c.messageList.SetCell(row, 0, dateCell)
@@ -125,5 +130,9 @@ func (c *Chat) SetSelectable(value bool) {
 }
 
 func (c *Chat) GetHighlightedMessage() *razpravljalnica.Message {
-	return c.messageList.GetCell(c.highlightedRow, 2).Reference.(*razpravljalnica.Message)
+	msg, ok := c.messageList.GetCell(c.highlightedRow, 2).Reference.(*razpravljalnica.Message)
+	if !ok {
+		return nil
+	}
+	return msg
 }

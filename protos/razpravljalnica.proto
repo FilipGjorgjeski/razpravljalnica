@@ -26,6 +26,7 @@ message Message {
   string text = 4;
   google.protobuf.Timestamp created_at = 5;
   int32 likes = 6;
+  bool likedByUser = 7;
 }
 
 message Like {
@@ -137,6 +138,7 @@ message GetMessagesRequest {
   int64 topic_id = 1;
   int64 from_message_id = 2; // starting id of the message (0 from beggining)
   int32 limit = 3; // max number of messages
+  int64 user_id = 4; // optional, provides per-message liked status
 }
 message GetMessagesResponse {
   repeated Message messages = 1;

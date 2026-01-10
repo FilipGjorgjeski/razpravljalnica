@@ -459,7 +459,7 @@ func (c *Client) ListTopics(ctx context.Context) (*pb.ListTopicsResponse, error)
 	return mb.ListTopics(ctx, &emptypb.Empty{})
 }
 
-func (c *Client) GetMessages(ctx context.Context, topicID int64, fromMessageID int64, limit int32) (*pb.GetMessagesResponse, error) {
+func (c *Client) GetMessages(ctx context.Context, topicID int64, fromMessageID int64, limit int32, userId int64) (*pb.GetMessagesResponse, error) {
 	addr := c.tailAddr()
 	if addr == "" {
 		if _, err := c.RefreshClusterState(ctx); err != nil {
@@ -481,7 +481,7 @@ func (c *Client) GetMessages(ctx context.Context, topicID int64, fromMessageID i
 	}
 	defer func() { _ = conn.Close() }()
 
-	return mb.GetMessages(ctx, &pb.GetMessagesRequest{TopicId: topicID, FromMessageId: fromMessageID, Limit: limit})
+	return mb.GetMessages(ctx, &pb.GetMessagesRequest{TopicId: topicID, FromMessageId: fromMessageID, Limit: limit, UserId: userId})
 }
 
 func (c *Client) Subscribe(ctx context.Context, topics []int64, userID int64, fromMessageID int64, handler func(*pb.MessageEvent) error) error {

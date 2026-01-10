@@ -22,7 +22,7 @@ const (
 	MessageEdit       DisplayMode = "MESSAGE_EDIT"
 )
 
-const colorFieldSelected = tcell.ColorDarkGray
+const colorFieldSelected = tcell.ColorGray
 
 type Display struct {
 	user       *razpravljalnica.User
@@ -158,10 +158,11 @@ func (d *Display) Update() {
 		}
 
 		d.header.Update(HeaderData{
-			username:     d.user.GetName(),
-			clusterState: d.client.State().String(),
-			err:          "",
-			displayMode:  d.activeMode,
+			username:           d.user.GetName(),
+			clusterState:       d.client.State().String(),
+			err:                "",
+			displayMode:        d.activeMode,
+			highlightedMessage: d.chat.GetHighlightedMessage(),
 		})
 
 		d.chat.Update(ChatData{
@@ -202,10 +203,11 @@ func (d *Display) Login(username string) {
 
 func (d *Display) handleError(err error) {
 	d.header.Update(HeaderData{
-		username:     d.GetUsername(),
-		clusterState: d.client.State().String(),
-		err:          err.Error(),
-		displayMode:  d.activeMode,
+		username:           d.GetUsername(),
+		clusterState:       d.client.State().String(),
+		err:                err.Error(),
+		displayMode:        d.activeMode,
+		highlightedMessage: d.chat.GetHighlightedMessage(),
 	})
 }
 
@@ -258,7 +260,7 @@ func (d *Display) ToNewTopicBox() {
 func (d *Display) fetchAndUpdateMessageList(topicId int64) {
 	ctx, cancel := TimeoutContext()
 	defer cancel()
-	messages, err := d.client.GetMessages(ctx, topicId, 0, 0)
+	messages, err := d.client.GetMessages(ctx, topicId, 0, 0, d.user.Id)
 	if err != nil {
 		d.handleError(err)
 		return

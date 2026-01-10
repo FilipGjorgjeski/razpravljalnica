@@ -687,7 +687,7 @@ func (n *ChainNode) PostMessage(ctx context.Context, req *pb.PostMessageRequest)
 			_ = n.waitForCommit(ctx, rr.Seq)
 		}
 		if ef, ok := n.store.ChainEffect(rr.Seq); ok {
-			return toProtoMessage(ef.Message), nil
+			return toProtoMessage(ef.Message, false), nil
 		}
 		return nil, status.Error(codes.Internal, "missing effect for request")
 	}
@@ -713,7 +713,7 @@ func (n *ChainNode) PostMessage(ctx context.Context, req *pb.PostMessageRequest)
 		}
 		n.logf("commit observed post_message seq=%d", entry.Seq)
 	}
-	return toProtoMessage(ef.Message), nil
+	return toProtoMessage(ef.Message, false), nil
 }
 
 func (n *ChainNode) UpdateMessage(ctx context.Context, req *pb.UpdateMessageRequest) (*pb.Message, error) {
@@ -738,7 +738,7 @@ func (n *ChainNode) UpdateMessage(ctx context.Context, req *pb.UpdateMessageRequ
 			_ = n.waitForCommit(ctx, rr.Seq)
 		}
 		if ef, ok := n.store.ChainEffect(rr.Seq); ok {
-			return toProtoMessage(ef.Message), nil
+			return toProtoMessage(ef.Message, n.store.IsMessageLikedByUser(req.MessageId, req.UserId)), nil
 		}
 		return nil, status.Error(codes.Internal, "missing effect for request")
 	}
@@ -764,7 +764,7 @@ func (n *ChainNode) UpdateMessage(ctx context.Context, req *pb.UpdateMessageRequ
 		}
 		n.logf("commit observed update_message seq=%d", entry.Seq)
 	}
-	return toProtoMessage(ef.Message), nil
+	return toProtoMessage(ef.Message, n.store.IsMessageLikedByUser(req.MessageId, req.UserId)), nil
 }
 
 func (n *ChainNode) DeleteMessage(ctx context.Context, req *pb.DeleteMessageRequest) (*emptypb.Empty, error) {
@@ -838,7 +838,7 @@ func (n *ChainNode) LikeMessage(ctx context.Context, req *pb.LikeMessageRequest)
 			_ = n.waitForCommit(ctx, rr.Seq)
 		}
 		if ef, ok := n.store.ChainEffect(rr.Seq); ok {
-			return toProtoMessage(ef.Message), nil
+			return toProtoMessage(ef.Message, true), nil
 		}
 		return nil, status.Error(codes.Internal, "missing effect for request")
 	}
@@ -864,7 +864,7 @@ func (n *ChainNode) LikeMessage(ctx context.Context, req *pb.LikeMessageRequest)
 		}
 		n.logf("commit observed like_message seq=%d", entry.Seq)
 	}
-	return toProtoMessage(ef.Message), nil
+	return toProtoMessage(ef.Message, true), nil
 }
 
 func (n *ChainNode) ListTopics(ctx context.Context, _ *emptypb.Empty) (*pb.ListTopicsResponse, error) {
@@ -915,7 +915,7 @@ func (n *ChainNode) GetMessages(ctx context.Context, req *pb.GetMessagesRequest)
 		}
 		res := make([]*pb.Message, 0, len(msgs))
 		for _, m := range msgs {
-			res = append(res, toProtoMessage(m))
+			res = append(res, toProtoMessage(m, n.store.IsMessageLikedByUser(m.ID, req.UserId)))
 		}
 		return &pb.GetMessagesResponse{Messages: res}, nil
 	}
@@ -927,7 +927,7 @@ func (n *ChainNode) GetMessages(ctx context.Context, req *pb.GetMessagesRequest)
 	}
 	res := make([]*pb.Message, 0, len(msgs))
 	for _, m := range msgs {
-		res = append(res, toProtoMessage(m))
+		res = append(res, toProtoMessage(m, n.store.IsMessageLikedByUser(m.ID, req.UserId)))
 	}
 	return &pb.GetMessagesResponse{Messages: res}, nil
 }
@@ -1015,7 +1015,7 @@ func (n *ChainNode) SubscribeTopic(req *pb.SubscribeTopicRequest, stream pb.Mess
 
 	var streamSeq int64 = 1
 	send := func(op pb.OpType, m storage.Message, at time.Time) error {
-		ev := &pb.MessageEvent{SequenceNumber: streamSeq, Op: op, Message: toProtoMessage(m), EventAt: timestamppb.New(at)}
+		ev := &pb.MessageEvent{SequenceNumber: streamSeq, Op: op, Message: toProtoMessage(m, n.store.IsMessageLikedByUser(m.ID, req.UserId)), EventAt: timestamppb.New(at)}
 		streamSeq++
 		return stream.Send(ev)
 	}
