@@ -13,3 +13,5 @@ Tab to select different form fields
 N to create a new topic while in topic menu or to write a new message while in message list
 
 L to like or unlike a message
+
+Delete to delete your message

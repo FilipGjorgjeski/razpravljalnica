@@ -71,6 +71,16 @@ func (d *Display) RegisterKeyboardHandlers() {
 		if event.Key() == tcell.KeyCtrlR {
 			d.Update()
 		}
+		if event.Key() == tcell.KeyDelete {
+			if d.activeMode == MessageList {
+				message := d.chat.GetHighlightedMessage()
+				if message.UserId != d.user.Id {
+					return event
+				}
+
+				go d.deleteMessage(message.Id)
+			}
+		}
 		if event.Rune() == 'n' {
 			switch d.activeMode {
 			case TopicMenu:
@@ -81,9 +91,9 @@ func (d *Display) RegisterKeyboardHandlers() {
 		}
 		if event.Rune() == 'l' {
 			if d.activeMode == MessageList {
-				highlightedMessage := d.chat.messageList.GetCell(d.chat.highlightedRow, 2).Reference.(*razpravljalnica.Message)
+				message := d.chat.GetHighlightedMessage()
 
-				go d.likeMessage(highlightedMessage.Id)
+				go d.likeMessage(message.Id)
 			}
 		}
 		return event
@@ -343,4 +353,18 @@ func (d *Display) createTopic(name string) {
 	}
 
 	d.Update()
+}
+
+func (d *Display) deleteMessage(messageId int64) {
+	ctx, cancel := TimeoutContext()
+	defer cancel()
+
+	err := d.client.DeleteMessage(ctx, d.selectedTopic.Id, d.user.Id, messageId, "")
+	if err != nil {
+		d.handleError(err)
+	}
+
+	d.Update()
+
+	go d.fetchAndUpdateMessageList(d.selectedTopic.Id)
 }

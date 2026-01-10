@@ -67,19 +67,19 @@ func NewChat() *Chat {
 	return chat
 }
 
-func (s *Chat) GetView() tview.Primitive {
-	return s.view
+func (c *Chat) GetView() tview.Primitive {
+	return c.view
 }
 
-func (s *Chat) Update(data ChatData) {
-	s.messageList.Clear()
+func (c *Chat) Update(data ChatData) {
+	c.messageList.Clear()
 
 	for i, message := range data.messages {
-		s.addChatMessageEntry(message, i)
+		c.addChatMessageEntry(message, i)
 	}
 }
 
-func (s *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
+func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
 	dateCell := tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)).SetTextColor(tcell.ColorDarkGray)
 
 	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", strconv.Itoa(int(message.GetUserId())))).SetAlign(tview.AlignRight)
@@ -91,35 +91,39 @@ func (s *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
 
 	likesCell := tview.NewTableCell(fmt.Sprintf("♥ %d", message.GetLikes()))
 
-	if s.d.selectedMessage != nil && s.d.selectedMessage.Id == message.Id {
+	if c.d.selectedMessage != nil && c.d.selectedMessage.Id == message.Id {
 		dateCell.SetBackgroundColor(colorFieldSelected)
 		usernameCell.SetBackgroundColor(colorFieldSelected)
 		messageCell.SetBackgroundColor(colorFieldSelected)
 	}
 
-	s.messageList.SetCell(row, 0, dateCell)
-	s.messageList.SetCell(row, 1, usernameCell)
-	s.messageList.SetCell(row, 2, messageCell)
-	s.messageList.SetCell(row, 3, likesCell)
+	c.messageList.SetCell(row, 0, dateCell)
+	c.messageList.SetCell(row, 1, usernameCell)
+	c.messageList.SetCell(row, 2, messageCell)
+	c.messageList.SetCell(row, 3, likesCell)
 }
 
-func (s *Chat) ResetMessageBox() {
-	s.messageFormInput.SetText("")
-	s.messageFormInputContent = ""
+func (c *Chat) ResetMessageBox() {
+	c.messageFormInput.SetText("")
+	c.messageFormInputContent = ""
 }
 
-func (s *Chat) HideAndResetMessageBox() {
-	s.view.AddItem(tview.NewBox(), 1, 0, 1, 1, 0, 0, false)
-	s.ResetMessageBox()
+func (c *Chat) HideAndResetMessageBox() {
+	c.view.AddItem(tview.NewBox(), 1, 0, 1, 1, 0, 0, false)
+	c.ResetMessageBox()
 }
 
-func (s *Chat) ShowMessageBox() {
-	s.view.AddItem(s.messageForm, 1, 0, 1, 1, 0, 0, true)
+func (c *Chat) ShowMessageBox() {
+	c.view.AddItem(c.messageForm, 1, 0, 1, 1, 0, 0, true)
 }
 
-func (s *Chat) SetSelectable(value bool) {
-	current, _ := s.messageList.GetSelectable()
+func (c *Chat) SetSelectable(value bool) {
+	current, _ := c.messageList.GetSelectable()
 	if current != value {
-		s.messageList.SetSelectable(value, false)
+		c.messageList.SetSelectable(value, false)
 	}
+}
+
+func (c *Chat) GetHighlightedMessage() *razpravljalnica.Message {
+	return c.messageList.GetCell(c.highlightedRow, 2).Reference.(*razpravljalnica.Message)
 }
