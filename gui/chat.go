@@ -2,7 +2,6 @@ package gui
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
@@ -82,7 +81,7 @@ func (c *Chat) Update(data ChatData) {
 func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
 	dateCell := tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)).SetTextColor(tcell.ColorDarkGray)
 
-	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", strconv.Itoa(int(message.GetUserId())))).SetAlign(tview.AlignRight)
+	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", message.GetUsername())).SetAlign(tview.AlignRight)
 
 	messageCell := tview.NewTableCell(message.GetText()).
 		SetAlign(tview.AlignLeft).

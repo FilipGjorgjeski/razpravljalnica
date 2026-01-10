@@ -55,7 +55,7 @@ func (h *Header) Update(data HeaderData) {
 		SetCellSimple(3, 1, string(data.displayMode))
 
 	if data.highlightedMessage != nil {
-		h.statusTable.SetCellSimple(4, 1, fmt.Sprintf("{%d} <%d>: %s likes=%d liked=%t", data.highlightedMessage.Id, data.highlightedMessage.UserId, data.highlightedMessage.Text, data.highlightedMessage.Likes, data.highlightedMessage.LikedByUser))
+		h.statusTable.SetCellSimple(4, 1, fmt.Sprintf("{%d} <%s> [%d]: %s likes=%d liked=%t", data.highlightedMessage.Id, data.highlightedMessage.Username, data.highlightedMessage.UserId, data.highlightedMessage.Text, data.highlightedMessage.Likes, data.highlightedMessage.LikedByUser))
 	}
 	if data.err != "" {
 		h.statusTable.SetCellSimple(2, 1, data.err)

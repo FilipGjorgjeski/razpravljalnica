@@ -27,6 +27,7 @@ message Message {
   google.protobuf.Timestamp created_at = 5;
   int32 likes = 6;
   bool likedByUser = 7;
+  string username = 8;
 }
 
 message Like {
@@ -79,9 +80,6 @@ service  MessageBoard{
 
   // Returns all the topics
   rpc ListTopics(google.protobuf.Empty) returns (ListTopicsResponse);
-
-  // NOTE: Add method GetUsers or attach name to message in order to obtain user names.
-  // Currently, there is no way for the client to display user names, only user IDs
 
   // Returns messages in a topic
   rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
