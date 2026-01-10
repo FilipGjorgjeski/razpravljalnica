@@ -14,6 +14,7 @@ type DisplayMode string
 const (
 	UsernameSelection DisplayMode = "USERNAME_SELECTION"
 	TopicMenu         DisplayMode = "TOPIC_MENU"
+	TopicNew          DisplayMode = "TOPIC_NEW"
 	MessageNew        DisplayMode = "MESSAGE_NEW"
 	MessageList       DisplayMode = "MESSAGE_LIST"
 	MessageEdit       DisplayMode = "MESSAGE_EDIT"
@@ -73,7 +74,7 @@ func (d *Display) RegisterKeyboardHandlers() {
 		if event.Rune() == 'n' {
 			switch d.activeMode {
 			case TopicMenu:
-				// TODO: Create topic
+				d.ToNewTopicBox()
 			case MessageList:
 				d.ToMessageBox(nil)
 			}
@@ -99,36 +100,45 @@ func (d *Display) Update() {
 		case UsernameSelection:
 			d.pages.SwitchToPage(string(LoginPage))
 			d.app.SetFocus(d.chat.GetView())
+			d.sidebar.SetSelectable(false)
+			d.sidebar.HideAndResetNewTopicBox()
 			d.chat.SetSelectable(false)
-			d.sidebar.topicsTable.SetSelectable(false, false)
-			d.chat.HideMessageBox()
-			d.chat.ResetMessageBox()
+			d.chat.HideAndResetMessageBox()
 		case TopicMenu:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.sidebar.GetView())
+			d.sidebar.SetSelectable(true)
+			d.sidebar.HideAndResetNewTopicBox()
 			d.chat.SetSelectable(false)
-			d.sidebar.topicsTable.SetSelectable(true, false)
-			d.chat.HideMessageBox()
-			d.chat.ResetMessageBox()
+			d.chat.HideAndResetMessageBox()
+		case TopicNew:
+			d.pages.SwitchToPage(string(ChatPage))
+			d.app.SetFocus(d.sidebar.topicForm)
+			d.sidebar.SetSelectable(false)
+			d.sidebar.ShowNewTopicBox()
+			d.chat.SetSelectable(false)
+			d.chat.HideAndResetMessageBox()
 		case MessageList:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.chat.GetView())
+			d.sidebar.SetSelectable(false)
+			d.sidebar.HideAndResetNewTopicBox()
 			d.chat.SetSelectable(true)
-			d.sidebar.topicsTable.SetSelectable(false, false)
-			d.chat.HideMessageBox()
-			d.chat.ResetMessageBox()
+			d.chat.HideAndResetMessageBox()
 		case MessageNew:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.chat.messageForm)
+			d.sidebar.SetSelectable(false)
+			d.sidebar.HideAndResetNewTopicBox()
 			d.chat.SetSelectable(false)
-			d.sidebar.topicsTable.SetSelectable(false, false)
 			d.chat.ShowMessageBox()
 			d.chat.messageFormInput.SetLabel("New message")
 		case MessageEdit:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.chat.messageForm)
+			d.sidebar.SetSelectable(false)
+			d.sidebar.HideAndResetNewTopicBox()
 			d.chat.SetSelectable(false)
-			d.sidebar.topicsTable.SetSelectable(false, false)
 			d.chat.ShowMessageBox()
 			d.chat.messageFormInput.SetLabel("Edit message")
 		}
@@ -218,6 +228,19 @@ func (d *Display) ToTopicMenu() {
 	go d.fetchAndUpdateTopicsList()
 }
 
+func (d *Display) ToNewTopicBox() {
+	d.lock.Lock()
+
+	d.activeMode = TopicNew
+	d.selectedTopic = nil
+	d.selectedMessage = nil
+
+	d.sidebar.topicForm.SetFocus(0)
+
+	d.lock.Unlock()
+	d.Update()
+}
+
 func (d *Display) fetchAndUpdateMessageList(topicId int64) {
 	ctx, cancel := TimeoutContext()
 	defer cancel()
@@ -303,6 +326,18 @@ func (d *Display) likeMessage(messageId int64) {
 	defer cancel()
 
 	_, err := d.client.LikeMessage(ctx, d.selectedTopic.Id, messageId, d.user.Id, "")
+	if err != nil {
+		d.handleError(err)
+	}
+
+	d.Update()
+}
+
+func (d *Display) createTopic(name string) {
+	ctx, cancel := TimeoutContext()
+	defer cancel()
+
+	_, err := d.client.CreateTopic(ctx, name, "")
 	if err != nil {
 		d.handleError(err)
 	}
