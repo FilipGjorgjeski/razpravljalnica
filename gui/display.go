@@ -22,8 +22,6 @@ const (
 	MessageEdit       DisplayMode = "MESSAGE_EDIT"
 )
 
-const colorFieldSelected = tcell.ColorGray
-
 type Display struct {
 	user       *razpravljalnica.User
 	activeMode DisplayMode

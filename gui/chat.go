@@ -27,8 +27,7 @@ type ChatData struct {
 
 func NewChat() *Chat {
 
-	table := tview.NewTable().SetSelectable(true, false).SetBorders(true).
-		SetSelectedStyle(tcell.StyleDefault.Background(tcell.ColorDarkGray).Foreground(tcell.ColorWhite))
+	table := StyleNormalTable(tview.NewTable()).SetSelectable(true, false).SetBorders(true)
 
 	textInput := tview.NewInputField().
 		SetLabel("Message").
@@ -79,26 +78,27 @@ func (c *Chat) Update(data ChatData) {
 }
 
 func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
-	dateCell := tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)).SetTextColor(tcell.ColorDarkGray)
+	dateCell := StyleMutedTableCell(tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)))
 
-	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", message.GetUsername())).SetAlign(tview.AlignRight)
+	usernameCell := StyleNormalTableCell(tview.NewTableCell(fmt.Sprintf("<%s>:", message.GetUsername()))).
+		SetAlign(tview.AlignRight)
 
-	messageCell := tview.NewTableCell(message.GetText()).
+	messageCell := StyleNormalTableCell(tview.NewTableCell(message.GetText())).
 		SetAlign(tview.AlignLeft).
 		SetExpansion(1).
 		SetReference(message)
 
-	likesCell := tview.NewTableCell(fmt.Sprintf("♥ %d", message.GetLikes())).SetTextColor(tcell.ColorGray)
-
-	if message.LikedByUser {
-		likesCell.SetTextColor(tcell.ColorRed)
-	}
+	likesCell := StyleMutedTableCell(tview.NewTableCell(fmt.Sprintf("%d ♥", message.GetLikes())))
 
 	if c.d.selectedMessage != nil && c.d.selectedMessage.Id == message.Id {
-		dateCell.SetBackgroundColor(colorFieldSelected)
-		usernameCell.SetBackgroundColor(colorFieldSelected)
-		messageCell.SetBackgroundColor(colorFieldSelected)
-		likesCell.SetBackgroundColor(colorFieldSelected)
+		StyleSelectedTableCell(dateCell)
+		StyleSelectedTableCell(usernameCell)
+		StyleSelectedTableCell(messageCell)
+		StyleSelectedTableCell(likesCell)
+	}
+
+	if message.LikedByUser {
+		likesCell.SetTextColor(colorHighlight).SetAttributes(tcell.AttrBold)
 	}
 
 	c.messageList.SetCell(row, 0, dateCell)

@@ -21,7 +21,7 @@ type SidebarData struct {
 }
 
 func NewSidebar() *Sidebar {
-	table := tview.NewTable()
+	table := StyleNormalTable(tview.NewTable())
 
 	grid := tview.NewGrid().SetRows(0, 5).SetColumns(0).
 		AddItem(table, 0, 0, 1, 1, 0, 0, true)
@@ -37,10 +37,12 @@ func NewSidebar() *Sidebar {
 		topicFormInput: textInput,
 	}
 
-	table.Select(0, 0).SetSelectable(true, false).SetSelectedFunc(func(row, column int) {
-		topic := table.GetCell(row, column).GetReference().(*razpravljalnica.Topic)
-		sidebar.d.ToMessageList(topic)
-	})
+	table.Select(0, 0).
+		SetSelectable(true, false).
+		SetSelectedFunc(func(row, column int) {
+			topic := table.GetCell(row, column).GetReference().(*razpravljalnica.Topic)
+			sidebar.d.ToMessageList(topic)
+		})
 
 	textInput.
 		SetChangedFunc(func(text string) { sidebar.topicFormInputContent = text })
@@ -65,10 +67,12 @@ func (s *Sidebar) Update(data SidebarData) {
 	s.topicsTable.Clear()
 
 	for i, topic := range data.topics {
-		cell := tview.NewTableCell(topic.GetName()).SetReference(topic)
+		cell := StyleNormalTableCell(tview.NewTableCell(topic.GetName())).SetReference(topic)
+
 		if s.d.selectedTopic != nil && s.d.selectedTopic.Id == topic.Id {
-			cell.SetBackgroundColor(colorFieldSelected)
+			StyleSelectedTableCell(cell)
 		}
+
 		s.topicsTable.SetCell(i, 0, cell)
 	}
 }
