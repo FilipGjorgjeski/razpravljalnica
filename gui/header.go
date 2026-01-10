@@ -12,6 +12,7 @@ type HeaderData struct {
 	username     string
 	clusterState string
 	err          string
+	displayMode  DisplayMode
 }
 
 const headerText = `[yellow]Razpravljalnica
@@ -22,7 +23,8 @@ func NewHeader() *Header {
 	status := tview.NewTable().
 		SetCellSimple(0, 0, "Username:").
 		SetCellSimple(1, 0, "Cluster state:").
-		SetCellSimple(2, 0, "Error:")
+		SetCellSimple(2, 0, "Error:").
+		SetCellSimple(3, 0, "DisplayMode:")
 
 	grid := tview.NewGrid().SetRows(0).SetColumns(30, 0).
 		AddItem(tview.NewTextView().SetDynamicColors(true).SetText(headerText), 0, 0, 1, 1, 0, 0, false).
@@ -43,5 +45,9 @@ func (h *Header) Update(data HeaderData) {
 	h.statusTable.
 		SetCellSimple(0, 1, data.username).
 		SetCellSimple(1, 1, data.clusterState).
-		SetCellSimple(2, 1, data.err)
+		SetCellSimple(3, 1, string(data.displayMode))
+
+	if data.err != "" {
+		h.statusTable.SetCellSimple(2, 1, data.err)
+	}
 }

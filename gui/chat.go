@@ -19,6 +19,7 @@ type Chat struct {
 	messageForm             *tview.Form
 	messageFormInput        *tview.InputField
 	messageFormInputContent string
+	highlightedRow          int
 }
 
 type ChatData struct {
@@ -47,6 +48,8 @@ func NewChat() *Chat {
 	table.SetSelectedFunc(func(row, column int) {
 		message := table.GetCell(row, 2).Reference.(*razpravljalnica.Message)
 		chat.d.ToMessageBox(message)
+	}).SetSelectionChangedFunc(func(row, column int) {
+		chat.highlightedRow = row
 	})
 
 	textInput.
@@ -74,22 +77,30 @@ func (c *Chat) Update(data ChatData) {
 	for i, message := range data.messages {
 		c.addChatMessageEntry(message, i)
 	}
-
-	c.messageList.Select(len(data.messages)-1, 0)
 }
 
 func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
 	dateCell := tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)).SetTextColor(tcell.ColorDarkGray)
-	c.messageList.SetCell(row, 0, dateCell)
 
 	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", strconv.Itoa(int(message.GetUserId())))).SetAlign(tview.AlignRight)
-	c.messageList.SetCell(row, 1, usernameCell)
 
 	messageCell := tview.NewTableCell(message.GetText()).
 		SetAlign(tview.AlignLeft).
 		SetExpansion(1).
 		SetReference(message)
+
+	likesCell := tview.NewTableCell(fmt.Sprintf("♥ %d", message.GetLikes()))
+
+	if c.d.selectedMessage != nil && c.d.selectedMessage.Id == message.Id {
+		dateCell.SetBackgroundColor(colorFieldSelected)
+		usernameCell.SetBackgroundColor(colorFieldSelected)
+		messageCell.SetBackgroundColor(colorFieldSelected)
+	}
+
+	c.messageList.SetCell(row, 0, dateCell)
+	c.messageList.SetCell(row, 1, usernameCell)
 	c.messageList.SetCell(row, 2, messageCell)
+	c.messageList.SetCell(row, 3, likesCell)
 }
 
 func (c *Chat) ResetMessageBox() {
@@ -103,4 +114,11 @@ func (c *Chat) HideMessageBox() {
 
 func (c *Chat) ShowMessageBox() {
 	c.view.AddItem(c.messageForm, 1, 0, 1, 1, 0, 0, true)
+}
+
+func (c *Chat) SetSelectable(value bool) {
+	current, _ := c.messageList.GetSelectable()
+	if current != value {
+		c.messageList.SetSelectable(value, false)
+	}
 }

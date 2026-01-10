@@ -4,7 +4,7 @@ import "github.com/rivo/tview"
 
 func getStandardGrid(sidebar bool) *tview.Grid {
 	grid := tview.NewGrid().
-		SetRows(3, 0, 3)
+		SetRows(5, 0, 3)
 
 	if sidebar {
 		grid.SetColumns(30, 0)

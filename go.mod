@@ -4,7 +4,6 @@ go 1.25.5
 
 require (
 	github.com/gdamore/tcell/v2 v2.8.1
-	github.com/google/uuid v1.6.0
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.78.0

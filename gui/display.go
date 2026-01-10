@@ -6,19 +6,20 @@ import (
 	"github.com/FilipGjorgjeski/razpravljalnica/client"
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/uuid"
 	"github.com/rivo/tview"
 )
 
-type DisplayMode int
+type DisplayMode string
 
 const (
-	UsernameSelection DisplayMode = iota
-	TopicMenu
-	MessageNew
-	MessageList
-	MessageEdit
+	UsernameSelection DisplayMode = "USERNAME_SELECTION"
+	TopicMenu         DisplayMode = "TOPIC_MENU"
+	MessageNew        DisplayMode = "MESSAGE_NEW"
+	MessageList       DisplayMode = "MESSAGE_LIST"
+	MessageEdit       DisplayMode = "MESSAGE_EDIT"
 )
+
+const colorFieldSelected = tcell.ColorDarkGray
 
 type Display struct {
 	user       *razpravljalnica.User
@@ -77,6 +78,13 @@ func (d *Display) RegisterKeyboardHandlers() {
 				d.ToMessageBox(nil)
 			}
 		}
+		if event.Rune() == 'l' {
+			if d.activeMode == MessageList {
+				highlightedMessage := d.chat.messageList.GetCell(d.chat.highlightedRow, 2).Reference.(*razpravljalnica.Message)
+
+				go d.likeMessage(highlightedMessage.Id)
+			}
+		}
 		return event
 	})
 }
@@ -91,31 +99,36 @@ func (d *Display) Update() {
 		case UsernameSelection:
 			d.pages.SwitchToPage(string(LoginPage))
 			d.app.SetFocus(d.chat.GetView())
-			d.chat.messageList.SetSelectable(false, false)
+			d.chat.SetSelectable(false)
+			d.sidebar.topicsTable.SetSelectable(false, false)
 			d.chat.HideMessageBox()
 			d.chat.ResetMessageBox()
 		case TopicMenu:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.sidebar.GetView())
-			d.chat.messageList.SetSelectable(false, false)
+			d.chat.SetSelectable(false)
+			d.sidebar.topicsTable.SetSelectable(true, false)
 			d.chat.HideMessageBox()
 			d.chat.ResetMessageBox()
 		case MessageList:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.chat.GetView())
-			d.chat.messageList.SetSelectable(true, false)
+			d.chat.SetSelectable(true)
+			d.sidebar.topicsTable.SetSelectable(false, false)
 			d.chat.HideMessageBox()
 			d.chat.ResetMessageBox()
 		case MessageNew:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.chat.messageForm)
-			d.chat.messageList.SetSelectable(false, false)
+			d.chat.SetSelectable(false)
+			d.sidebar.topicsTable.SetSelectable(false, false)
 			d.chat.ShowMessageBox()
 			d.chat.messageFormInput.SetLabel("New message")
 		case MessageEdit:
 			d.pages.SwitchToPage(string(ChatPage))
 			d.app.SetFocus(d.chat.messageForm)
-			d.chat.messageList.SetSelectable(false, false)
+			d.chat.SetSelectable(false)
+			d.sidebar.topicsTable.SetSelectable(false, false)
 			d.chat.ShowMessageBox()
 			d.chat.messageFormInput.SetLabel("Edit message")
 		}
@@ -124,6 +137,7 @@ func (d *Display) Update() {
 			username:     d.user.GetName(),
 			clusterState: d.client.State().String(),
 			err:          "",
+			displayMode:  d.activeMode,
 		})
 
 		d.chat.Update(ChatData{
@@ -149,7 +163,7 @@ func (d *Display) Login(username string) {
 	ctx, cancel := TimeoutContext()
 	defer cancel()
 
-	user, err := d.client.CreateUser(ctx, username, "login")
+	user, err := d.client.CreateUser(ctx, username, "")
 	if err != nil {
 		d.handleError(err)
 		return
@@ -167,6 +181,7 @@ func (d *Display) handleError(err error) {
 		username:     d.GetUsername(),
 		clusterState: d.client.State().String(),
 		err:          err.Error(),
+		displayMode:  d.activeMode,
 	})
 }
 
@@ -258,7 +273,7 @@ func (d *Display) sendMessage(topicId, userId int64, text string) {
 	ctx, cancel := TimeoutContext()
 	defer cancel()
 
-	_, err := d.client.PostMessage(ctx, topicId, userId, text, uuid.New().String())
+	_, err := d.client.PostMessage(ctx, topicId, userId, text, "")
 	if err != nil {
 		d.handleError(err)
 	}
@@ -268,7 +283,7 @@ func (d *Display) updateMessage(topicId, userId, messageId int64, text string) {
 	ctx, cancel := TimeoutContext()
 	defer cancel()
 
-	_, err := d.client.UpdateMessage(ctx, topicId, userId, messageId, text, uuid.New().String())
+	_, err := d.client.UpdateMessage(ctx, topicId, userId, messageId, text, "")
 	if err != nil {
 		d.handleError(err)
 	}
@@ -281,4 +296,16 @@ func (d *Display) sendOrUpdateMessage(text string) {
 		go d.updateMessage(d.selectedTopic.Id, d.user.Id, d.selectedMessage.Id, text)
 	}
 
+}
+
+func (d *Display) likeMessage(messageId int64) {
+	ctx, cancel := TimeoutContext()
+	defer cancel()
+
+	_, err := d.client.LikeMessage(ctx, d.selectedTopic.Id, messageId, d.user.Id, "")
+	if err != nil {
+		d.handleError(err)
+	}
+
+	d.Update()
 }

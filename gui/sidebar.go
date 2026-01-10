@@ -45,6 +45,9 @@ func (s *Sidebar) Update(data SidebarData) {
 
 	for i, topic := range data.topics {
 		cell := tview.NewTableCell(topic.GetName()).SetReference(topic)
+		if s.d.selectedTopic != nil && s.d.selectedTopic.Id == topic.Id {
+			cell.SetBackgroundColor(colorFieldSelected)
+		}
 		s.topicsTable.SetCell(i, 0, cell)
 	}
 }
