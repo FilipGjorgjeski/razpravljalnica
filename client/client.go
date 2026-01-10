@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -541,4 +542,8 @@ func (c *Client) Subscribe(ctx context.Context, topics []int64, userID int64, fr
 			}
 		}
 	}
+}
+
+func (cs ClusterState) String() string {
+	return fmt.Sprintf("cluster v=%d head=%v tail=%v\n", cs.ConfigVersion, cs.Head, cs.Tail)
 }

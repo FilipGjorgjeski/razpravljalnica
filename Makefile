@@ -15,3 +15,15 @@ grpc:
 
 test:
 	go test -p 1 ./...
+
+build-razcli:
+	CGO_ENABLED=0 go build -o bin/razcli cmd/razcli/main.go
+
+run-node-1:
+	go run cmd/razpravljalnica-node/main.go --node-id node1 --listen :50001 --control-plane=:50050
+
+run-control-plane:
+	go run cmd/razpravljalnica-control-plane/main.go
+
+run-gui:
+	go run cmd/razpravljalnica-gui-client/main.go
