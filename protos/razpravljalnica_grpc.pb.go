@@ -493,6 +493,9 @@ const (
 	ControlPlane_Heartbeat_FullMethodName         = "/razpravljalnica.ControlPlane/Heartbeat"
 	ControlPlane_AddNode_FullMethodName           = "/razpravljalnica.ControlPlane/AddNode"
 	ControlPlane_ActivateNode_FullMethodName      = "/razpravljalnica.ControlPlane/ActivateNode"
+	ControlPlane_JoinRAFTCluster_FullMethodName   = "/razpravljalnica.ControlPlane/JoinRAFTCluster"
+	ControlPlane_LeaveRAFTCluster_FullMethodName  = "/razpravljalnica.ControlPlane/LeaveRAFTCluster"
+	ControlPlane_GetRAFTStatus_FullMethodName     = "/razpravljalnica.ControlPlane/GetRAFTStatus"
 )
 
 // ControlPlaneClient is the client API for ControlPlane service.
@@ -512,6 +515,13 @@ type ControlPlaneClient interface {
 	AddNode(ctx context.Context, in *AddNodeRequest, opts ...grpc.CallOption) (*AddNodeResponse, error)
 	// Activates a previously added node after it has synced. Appends it to the chain and bumps config_version.
 	ActivateNode(ctx context.Context, in *ActivateNodeRequest, opts ...grpc.CallOption) (*GetClusterStateResponse, error)
+	// RAFT cluster management
+	// Control plane node wants to join a cluster
+	JoinRAFTCluster(ctx context.Context, in *JoinRAFTClusterRequest, opts ...grpc.CallOption) (*JoinRAFTClusterResponse, error)
+	// Control plane node wants to leave a cluster
+	LeaveRAFTCluster(ctx context.Context, in *LeaveRAFTClusterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Control plane node wants current cluster status
+	GetRAFTStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RAFTStatusResponse, error)
 }
 
 type controlPlaneClient struct {
@@ -581,6 +591,36 @@ func (c *controlPlaneClient) ActivateNode(ctx context.Context, in *ActivateNodeR
 	return out, nil
 }
 
+func (c *controlPlaneClient) JoinRAFTCluster(ctx context.Context, in *JoinRAFTClusterRequest, opts ...grpc.CallOption) (*JoinRAFTClusterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JoinRAFTClusterResponse)
+	err := c.cc.Invoke(ctx, ControlPlane_JoinRAFTCluster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlPlaneClient) LeaveRAFTCluster(ctx context.Context, in *LeaveRAFTClusterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ControlPlane_LeaveRAFTCluster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlPlaneClient) GetRAFTStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RAFTStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RAFTStatusResponse)
+	err := c.cc.Invoke(ctx, ControlPlane_GetRAFTStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControlPlaneServer is the server API for ControlPlane service.
 // All implementations must embed UnimplementedControlPlaneServer
 // for forward compatibility.
@@ -598,6 +638,13 @@ type ControlPlaneServer interface {
 	AddNode(context.Context, *AddNodeRequest) (*AddNodeResponse, error)
 	// Activates a previously added node after it has synced. Appends it to the chain and bumps config_version.
 	ActivateNode(context.Context, *ActivateNodeRequest) (*GetClusterStateResponse, error)
+	// RAFT cluster management
+	// Control plane node wants to join a cluster
+	JoinRAFTCluster(context.Context, *JoinRAFTClusterRequest) (*JoinRAFTClusterResponse, error)
+	// Control plane node wants to leave a cluster
+	LeaveRAFTCluster(context.Context, *LeaveRAFTClusterRequest) (*emptypb.Empty, error)
+	// Control plane node wants current cluster status
+	GetRAFTStatus(context.Context, *emptypb.Empty) (*RAFTStatusResponse, error)
 	mustEmbedUnimplementedControlPlaneServer()
 }
 
@@ -622,6 +669,15 @@ func (UnimplementedControlPlaneServer) AddNode(context.Context, *AddNodeRequest)
 }
 func (UnimplementedControlPlaneServer) ActivateNode(context.Context, *ActivateNodeRequest) (*GetClusterStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ActivateNode not implemented")
+}
+func (UnimplementedControlPlaneServer) JoinRAFTCluster(context.Context, *JoinRAFTClusterRequest) (*JoinRAFTClusterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method JoinRAFTCluster not implemented")
+}
+func (UnimplementedControlPlaneServer) LeaveRAFTCluster(context.Context, *LeaveRAFTClusterRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method LeaveRAFTCluster not implemented")
+}
+func (UnimplementedControlPlaneServer) GetRAFTStatus(context.Context, *emptypb.Empty) (*RAFTStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRAFTStatus not implemented")
 }
 func (UnimplementedControlPlaneServer) mustEmbedUnimplementedControlPlaneServer() {}
 func (UnimplementedControlPlaneServer) testEmbeddedByValue()                      {}
@@ -727,6 +783,60 @@ func _ControlPlane_ActivateNode_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControlPlane_JoinRAFTCluster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JoinRAFTClusterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServer).JoinRAFTCluster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlane_JoinRAFTCluster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServer).JoinRAFTCluster(ctx, req.(*JoinRAFTClusterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControlPlane_LeaveRAFTCluster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LeaveRAFTClusterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServer).LeaveRAFTCluster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlane_LeaveRAFTCluster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServer).LeaveRAFTCluster(ctx, req.(*LeaveRAFTClusterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControlPlane_GetRAFTStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServer).GetRAFTStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlane_GetRAFTStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServer).GetRAFTStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControlPlane_ServiceDesc is the grpc.ServiceDesc for ControlPlane service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -749,6 +859,18 @@ var ControlPlane_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ActivateNode",
 			Handler:    _ControlPlane_ActivateNode_Handler,
+		},
+		{
+			MethodName: "JoinRAFTCluster",
+			Handler:    _ControlPlane_JoinRAFTCluster_Handler,
+		},
+		{
+			MethodName: "LeaveRAFTCluster",
+			Handler:    _ControlPlane_LeaveRAFTCluster_Handler,
+		},
+		{
+			MethodName: "GetRAFTStatus",
+			Handler:    _ControlPlane_GetRAFTStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

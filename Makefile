@@ -22,8 +22,29 @@ build-razcli:
 run-node-1:
 	go run cmd/razpravljalnica-node/main.go --node-id node1 --listen :50001 --control-plane=:50050
 
+run-node-2:
+	go run cmd/razpravljalnica-node/main.go --node-id node2 --listen :50002 --control-plane=:50051
+
+run-node-3:
+	go run cmd/razpravljalnica-node/main.go --node-id node3 --listen :50003 --control-plane=:50052
+
 run-control-plane:
-	go run cmd/razpravljalnica-control-plane/main.go
+	go run cmd/razpravljalnica-control-plane/main.go --chain node1,node2,node3
 
 run-gui:
-	go run cmd/razpravljalnica-gui-client/main.go
+	go run cmd/razpravljalnica-gui-client/main.go --control-plane=localhost:50050
+
+reset-control-planes:
+	rm -r raft-data
+
+run-control-plane-raft-0:
+	go run cmd/razpravljalnica-control-plane/main.go --listen=:50050 --raft-enabled --raft-node-id=control0 --raft-bind=localhost:50150 --raft-bootstrap --chain node1,node2,node3
+
+run-control-plane-raft-0-rejoin:
+	go run cmd/razpravljalnica-control-plane/main.go --listen=:50050 --raft-enabled --raft-node-id=control0 --raft-bind=localhost:50150 --raft-join=:50051
+
+run-control-plane-raft-1:
+	go run cmd/razpravljalnica-control-plane/main.go --listen=:50051 --raft-enabled --raft-node-id=control1 --raft-bind=localhost:50151 --raft-join=:50050
+
+run-control-plane-raft-2:
+	go run cmd/razpravljalnica-control-plane/main.go --listen=:50052 --raft-enabled --raft-node-id=control2 --raft-bind=localhost:50152 --raft-join=:50051

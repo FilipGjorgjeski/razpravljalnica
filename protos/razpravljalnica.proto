@@ -187,6 +187,16 @@ service ControlPlane {
 
   // Activates a previously added node after it has synced. Appends it to the chain and bumps config_version.
   rpc ActivateNode(ActivateNodeRequest) returns (GetClusterStateResponse);
+
+  // RAFT cluster management
+  // Control plane node wants to join a cluster
+  rpc JoinRAFTCluster(JoinRAFTClusterRequest) returns (JoinRAFTClusterResponse);
+
+  // Control plane node wants to leave a cluster
+  rpc LeaveRAFTCluster(LeaveRAFTClusterRequest) returns (google.protobuf.Empty);
+
+  // Control plane node wants current cluster status
+  rpc GetRAFTStatus(google.protobuf.Empty) returns (RAFTStatusResponse);
 }
 
 message WatchClusterStateRequest {
@@ -240,6 +250,30 @@ message AddNodeResponse {
 
 message ActivateNodeRequest {
   string node_id = 1;
+}
+
+message JoinRAFTClusterRequest {
+  string node_id = 1;
+  string address = 2; // RAFT transport address
+  string grpc_address = 3; // gRPC address for forwarding requests
+}
+
+message JoinRAFTClusterResponse {
+  map<string, string> cluster_members = 1;
+  repeated string chain_order = 2; // Desired chain order (head to tail)
+}
+
+message LeaveRAFTClusterRequest {
+  string node_id = 1;
+}
+
+message RAFTStatusResponse {
+  string state = 1; // "Leader", "Follower", "Candidate"
+  string leader = 2; // Leader node's RAFT address
+  repeated string peers = 3; // List of all peer IDs in the cluster
+  uint64 last_log_index = 4; // Index of last log entry
+  uint64 commit_index = 6; // Highest committed log index
+  uint64 applied_index = 7; // Highest applied log index
 }
 
 ////////////////////////////////////////////////////////////////////////////////

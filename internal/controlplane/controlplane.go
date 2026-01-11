@@ -10,8 +10,10 @@ import (
 	"time"
 
 	pb "github.com/FilipGjorgjeski/razpravljalnica/protos"
+	"github.com/hashicorp/raft"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -59,6 +61,7 @@ type Server struct {
 
 	cfg Config
 
+	// Control plane state
 	mu        sync.RWMutex
 	nodes     map[string]*nodeRuntime
 	configVer int64
@@ -66,16 +69,47 @@ type Server struct {
 	pending   map[string]*pb.NodeInfo
 	alive     map[string]bool
 
+	// Watchers
 	watchMu     sync.Mutex
 	nextWatchID int64
 	watchers    map[int64]chan *pb.GetClusterStateResponse
+
+	// RAFT state
+	raftConfig  RaftConfig
+	raft        *raft.Raft
+	fsm         *controlPlaneFSM
+	transport   *raft.NetworkTransport
+	logStore    raft.LogStore
+	stableStore raft.StableStore
+	snapStore   raft.SnapshotStore
+
+	grpcListenAddr string
+	grpcAddrsMu    sync.RWMutex
+	grpcAddrs      map[string]string
 }
 
 func New(cfg Config) *Server {
 	if cfg.HeartbeatTimeout <= 0 {
 		cfg.HeartbeatTimeout = 3 * time.Second
 	}
-	return &Server{cfg: cfg, nodes: map[string]*nodeRuntime{}, pending: map[string]*pb.NodeInfo{}, watchers: map[int64]chan *pb.GetClusterStateResponse{}, alive: map[string]bool{}}
+	s := &Server{
+		cfg:       cfg,
+		nodes:     map[string]*nodeRuntime{},
+		pending:   map[string]*pb.NodeInfo{},
+		watchers:  map[int64]chan *pb.GetClusterStateResponse{},
+		alive:     map[string]bool{},
+		grpcAddrs: map[string]string{},
+	}
+
+	s.fsm = &controlPlaneFSM{server: s}
+	return s
+}
+
+func NewWithRAFT(cfg Config, raftCfg RaftConfig, listenAddress string) *Server {
+	s := New(cfg)
+	s.raftConfig = raftCfg
+	s.grpcListenAddr = listenAddress
+	return s
 }
 
 func (s *Server) Register(gs *grpc.Server) {
@@ -93,6 +127,116 @@ func ListenAndServe(listenAddr string, srv *Server) error {
 	return gs.Serve(lis)
 }
 
+// Apply command through RAFT if enabled
+func (s *Server) raftApply(cmd Command, timeout time.Duration) (interface{}, error) {
+	if s.raft == nil {
+		data, err := cmd.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		return s.fsm.Apply(&raft.Log{Data: data}), nil
+	}
+
+	if !s.isRAFTLeader() {
+		leader := s.raft.Leader()
+		if leader == "" {
+			return nil, status.Error(codes.Unavailable, "no leader elected")
+		}
+		return nil, status.Errorf(codes.FailedPrecondition, "not the leader, leader is %s", leader)
+	}
+
+	data, err := cmd.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	future := s.raft.Apply(data, timeout)
+	if future.Error() != nil {
+		return nil, future.Error()
+	}
+
+	return future.Response(), nil
+}
+
+func (s *Server) isRAFTLeader() bool {
+	if s.raft == nil {
+		return true
+	}
+	return s.raft.State() == raft.Leader
+}
+
+func (s *Server) getLeaderNodeID() (string, error) {
+	leaderRaftAddr := s.raft.Leader()
+	if leaderRaftAddr == "" {
+		return "", status.Error(codes.Unavailable, "no leader elected")
+	}
+
+	configFuture := s.raft.GetConfiguration()
+	if configFuture.Error() != nil {
+		return "", configFuture.Error()
+	}
+
+	var leaderID string
+	for _, server := range configFuture.Configuration().Servers {
+		if server.Address == leaderRaftAddr {
+			leaderID = string(server.ID)
+			break
+		}
+	}
+
+	if leaderID == "" {
+		return "", status.Error(codes.Internal, "leader ID not found")
+	}
+
+	return leaderID, nil
+}
+
+func (s *Server) getLeaderGrpcAddr() (string, error) {
+	if s.raft == nil {
+		return "", nil
+	}
+
+	if s.isRAFTLeader() {
+		return "", nil
+	}
+
+	leaderID, err := s.getLeaderNodeID()
+	if err != nil {
+		return "", err
+	}
+
+	s.grpcAddrsMu.RLock()
+	grpcAddr := s.grpcAddrs[leaderID]
+	s.grpcAddrsMu.RUnlock()
+
+	if grpcAddr == "" {
+		return "", status.Errorf(codes.Internal, "gRPC address not found for leader %s", leaderID)
+	}
+
+	return grpcAddr, nil
+}
+
+func forwardToLeader[T any](s *Server, originalErr error, handler func(pb.ControlPlaneClient) (T, error)) (T, error) {
+	var empty T
+
+	leaderAddr, lookupErr := s.getLeaderGrpcAddr()
+	if lookupErr != nil || leaderAddr == "" {
+		log.Printf("[raft]: forwarding to leader failed: %s", lookupErr)
+		return empty, originalErr
+	}
+
+	log.Printf("[raft]: forwarding request to leader at %s", leaderAddr)
+
+	conn, err := grpc.NewClient(leaderAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return empty, err
+	}
+	defer conn.Close()
+
+	client := pb.NewControlPlaneClient(conn)
+	return handler(client)
+}
+
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	id := strings.TrimSpace(req.GetNodeId())
 	addr := strings.TrimSpace(req.GetAddress())
@@ -100,26 +244,20 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 		return &pb.HeartbeatResponse{Role: pb.ChainRole_ROLE_UNKNOWN}, nil
 	}
 
-	now := time.Now().UTC()
-
-	s.mu.Lock()
-	rt := s.nodes[id]
-	if rt == nil {
-		rt = &nodeRuntime{}
-		s.nodes[id] = rt
+	cmd, err := NewHeartbeatCommand(id, addr, req.GetStatus())
+	if err != nil {
+		return nil, err
 	}
-	rt.info = &pb.NodeInfo{NodeId: id, Address: addr}
-	rt.status = req.GetStatus()
-	rt.lastSeenAt = now
 
-	log.Printf("[control-plane] heartbeat node=%s addr=%s applied=%d committed=%d", id, addr, rt.status.GetLastApplied(), rt.status.GetLastCommitted())
+	_, err = s.raftApply(cmd, 3*time.Second)
+	if err != nil {
+		return forwardToLeader(s, err, func(client pb.ControlPlaneClient) (*pb.HeartbeatResponse, error) {
+			return client.Heartbeat(ctx, req)
+		})
+	}
 
-	// Promote any pending nodes that have caught up to the current tail's committed seq.
-	changed := s.promotePendingLocked(now)
-	s.mu.Unlock()
-
-	chain, head, tail, ver, computeChanged := s.computeChain(now)
-	changed = changed || computeChanged
+	now := time.Now().UTC()
+	chain, head, tail, ver, changed := s.computeChain(now)
 	role, pred, succ := roleAndNeighbors(id, chain)
 	if changed {
 		log.Printf("[control-plane] cluster change ver=%d head=%s tail=%s chain=%v", ver, safeNodeID(head), safeNodeID(tail), ids(chain))
@@ -154,35 +292,20 @@ func (s *Server) AddNode(ctx context.Context, req *pb.AddNodeRequest) (*pb.AddNo
 		return nil, status.Error(codes.InvalidArgument, "node_id and address required")
 	}
 
+	cmd, err := NewAddNodeCommand(id, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.raftApply(cmd, 5*time.Second)
+	if err != nil {
+		return forwardToLeader(s, err, func(client pb.ControlPlaneClient) (*pb.AddNodeResponse, error) {
+			return client.AddNode(ctx, req)
+		})
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	for _, existing := range s.cfg.ChainOrder {
-		if existing == id {
-			return nil, status.Error(codes.AlreadyExists, "node already in chain order")
-		}
-	}
-	if _, ok := s.pending[id]; ok {
-		return nil, status.Error(codes.AlreadyExists, "node already pending")
-	}
-
-	s.pending[id] = &pb.NodeInfo{NodeId: id, Address: addr}
-	log.Printf("[control-plane] add pending node=%s addr=%s", id, addr)
-	// Remember the address so the node runtime is discoverable before its first heartbeat.
-	rt := s.nodes[id]
-	if rt == nil {
-		rt = &nodeRuntime{}
-		s.nodes[id] = rt
-	}
-	rt.info = &pb.NodeInfo{NodeId: id, Address: addr}
-
-	// If the node is already alive and caught up, promote immediately.
-	now := time.Now().UTC()
-	promoted := s.promotePendingLocked(now)
-	if promoted {
-		log.Printf("[control-plane] node=%s promoted immediately on add", id)
-	}
-
 	return s.currentTailLocked(), nil
 }
 
@@ -193,34 +316,19 @@ func (s *Server) ActivateNode(ctx context.Context, req *pb.ActivateNodeRequest) 
 		return nil, status.Error(codes.InvalidArgument, "node_id required")
 	}
 
-	s.mu.Lock()
-	info, ok := s.pending[id]
-	if !ok {
-		// If already in chain, treat as idempotent success.
-		for _, existing := range s.cfg.ChainOrder {
-			if existing == id {
-				s.mu.Unlock()
-				return s.GetClusterState(ctx, &emptypb.Empty{})
-			}
-		}
-		s.mu.Unlock()
-		return nil, status.Error(codes.NotFound, "node not pending")
+	cmd, err := NewActivateNodeCommand(id)
+	if err != nil {
+		return nil, err
 	}
-	s.cfg.ChainOrder = append(s.cfg.ChainOrder, id)
-	delete(s.pending, id)
-	// Ensure runtime exists and is considered alive immediately after activation.
-	rt := s.nodes[id]
-	if rt == nil {
-		rt = &nodeRuntime{}
-		s.nodes[id] = rt
-	}
-	if info != nil {
-		rt.info = info
-	}
-	rt.lastSeenAt = time.Now().UTC()
-	s.mu.Unlock()
 
-	now := time.Now().UTC()
+	_, err = s.raftApply(cmd, 5*time.Second)
+	if err != nil {
+		return forwardToLeader(s, err, func(client pb.ControlPlaneClient) (*pb.GetClusterStateResponse, error) {
+			return client.ActivateNode(ctx, req)
+		})
+	}
+
+	now := time.Now()
 	chain, head, tail, ver, changed := s.computeChain(now)
 	resp := &pb.GetClusterStateResponse{Head: head, Tail: tail, Chain: chain, ConfigVersion: ver}
 	if changed {
@@ -228,14 +336,6 @@ func (s *Server) ActivateNode(ctx context.Context, req *pb.ActivateNodeRequest) 
 		s.broadcastClusterState(resp)
 	}
 
-	// Ensure we have the latest address from pending info if the node hasn't heartbeated yet.
-	if info != nil {
-		for i := range chain {
-			if chain[i] != nil && chain[i].GetNodeId() == info.NodeId && chain[i].GetAddress() == "" {
-				chain[i].Address = info.Address
-			}
-		}
-	}
 	return resp, nil
 }
 
