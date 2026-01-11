@@ -115,14 +115,13 @@ func (s *Server) InitRAFT() error {
 	}
 	s.snapStore = snapStore
 
-	// Create RAFT instance
 	s.fsm = &controlPlaneFSM{server: s}
 
-	ra, err := raft.NewRaft(config, s.fsm, logStore, s.stableStore, snapStore, transport)
+	raftNode, err := raft.NewRaft(config, s.fsm, logStore, s.stableStore, snapStore, transport)
 	if err != nil {
 		return err
 	}
-	s.raft = ra
+	s.raft = raftNode
 
 	if s.grpcListenAddr != "" {
 		s.grpcAddrsMu.Lock()
@@ -142,12 +141,11 @@ func (s *Server) InitRAFT() error {
 			},
 		}
 
-		raftFuture := ra.BootstrapCluster(configuration)
+		raftFuture := raftNode.BootstrapCluster(configuration)
 		if raftFuture.Error() != nil {
 			return raftFuture.Error()
 		}
-
-		log.Printf("[raft]: bootstrapped new RAFT cluster")
+		log.Printf("[raft]: bootstrapped new cluster")
 	} else {
 		// Join cluster
 
@@ -189,6 +187,11 @@ func (s *Server) joinCluster() error {
 		s.grpcAddrs[nodeID] = grpcAddr
 	}
 	s.grpcAddrsMu.Unlock()
+
+	s.mu.Lock()
+	s.cfg.ChainOrder = resp.GetChainOrder()
+	s.mu.Unlock()
+	log.Printf("[raft]: adopted chain order from leader: %v", s.cfg.ChainOrder)
 
 	log.Printf("[raft]: successfully joined RAFT cluster at %s", s.raftConfig.JoinAddr)
 	return nil
@@ -240,7 +243,7 @@ func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterReq
 		return nil, status.Error(codes.InvalidArgument, "grpc_address required")
 	}
 
-	log.Printf("[raft]: adding RAFT server node=%s addr=%s grpc=%s", nodeID, address, grpcAddress)
+	log.Printf("[raft]: adding server node=%s addr=%s grpc=%s", nodeID, address, grpcAddress)
 
 	s.grpcAddrsMu.Lock()
 	s.grpcAddrs[nodeID] = grpcAddress
@@ -252,7 +255,7 @@ func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterReq
 		return nil, future.Error()
 	}
 
-	log.Printf("[raft]: successfully added RAFT server node=%s  addr=%s", nodeID, address)
+	log.Printf("[raft]: successfully added server node=%s  addr=%s", nodeID, address)
 
 	s.grpcAddrsMu.RLock()
 	// Copy map to ensure no async shenanigans happen
@@ -262,8 +265,14 @@ func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterReq
 	}
 	s.grpcAddrsMu.RUnlock()
 
+	s.mu.RLock()
+	chainOrder := make([]string, len(s.cfg.ChainOrder))
+	copy(chainOrder, s.cfg.ChainOrder)
+	s.mu.RUnlock()
+
 	return &pb.JoinRAFTClusterResponse{
 		ClusterMembers: clusterMembers,
+		ChainOrder:     chainOrder,
 	}, nil
 }
 
@@ -284,7 +293,7 @@ func (s *Server) LeaveRAFTCluster(ctx context.Context, req *pb.LeaveRAFTClusterR
 		return nil, status.Error(codes.InvalidArgument, "node_id required")
 	}
 
-	log.Printf("[raft]: removing RAFT server node=%s", nodeID)
+	log.Printf("[raft]: removing server node=%s", nodeID)
 
 	future := s.raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
 
@@ -292,7 +301,7 @@ func (s *Server) LeaveRAFTCluster(ctx context.Context, req *pb.LeaveRAFTClusterR
 		return nil, future.Error()
 	}
 
-	log.Printf("[raft]: successfully removed RAFT server node=%s", nodeID)
+	log.Printf("[raft]: successfully removed server node=%s", nodeID)
 	return &emptypb.Empty{}, nil
 }
 

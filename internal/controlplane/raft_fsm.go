@@ -182,7 +182,7 @@ func (fsm *controlPlaneFSM) Snapshot() (raft.FSMSnapshot, error) {
 	return snapshot, nil
 }
 
-// RAFT snapshot resture
+// RAFT snapshot restore
 func (fsm *controlPlaneFSM) Restore(reader io.ReadCloser) error {
 	defer reader.Close()
 

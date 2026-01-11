@@ -260,6 +260,7 @@ message JoinRAFTClusterRequest {
 
 message JoinRAFTClusterResponse {
   map<string, string> cluster_members = 1;
+  repeated string chain_order = 2; // Desired chain order (head to tail)
 }
 
 message LeaveRAFTClusterRequest {

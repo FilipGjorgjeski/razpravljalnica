@@ -1746,6 +1746,7 @@ func (x *JoinRAFTClusterRequest) GetGrpcAddress() string {
 type JoinRAFTClusterResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ClusterMembers map[string]string      `protobuf:"bytes,1,rep,name=cluster_members,json=clusterMembers,proto3" json:"cluster_members,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ChainOrder     []string               `protobuf:"bytes,2,rep,name=chain_order,json=chainOrder,proto3" json:"chain_order,omitempty"` // Desired chain order (head to tail)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1783,6 +1784,13 @@ func (*JoinRAFTClusterResponse) Descriptor() ([]byte, []int) {
 func (x *JoinRAFTClusterResponse) GetClusterMembers() map[string]string {
 	if x != nil {
 		return x.ClusterMembers
+	}
+	return nil
+}
+
+func (x *JoinRAFTClusterResponse) GetChainOrder() []string {
+	if x != nil {
+		return x.ChainOrder
 	}
 	return nil
 }
@@ -2836,9 +2844,11 @@ const file_protos_razpravljalnica_proto_rawDesc = "" +
 	"\x16JoinRAFTClusterRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12!\n" +
-	"\fgrpc_address\x18\x03 \x01(\tR\vgrpcAddress\"\xc3\x01\n" +
+	"\fgrpc_address\x18\x03 \x01(\tR\vgrpcAddress\"\xe4\x01\n" +
 	"\x17JoinRAFTClusterResponse\x12e\n" +
-	"\x0fcluster_members\x18\x01 \x03(\v2<.razpravljalnica.JoinRAFTClusterResponse.ClusterMembersEntryR\x0eclusterMembers\x1aA\n" +
+	"\x0fcluster_members\x18\x01 \x03(\v2<.razpravljalnica.JoinRAFTClusterResponse.ClusterMembersEntryR\x0eclusterMembers\x12\x1f\n" +
+	"\vchain_order\x18\x02 \x03(\tR\n" +
+	"chainOrder\x1aA\n" +
 	"\x13ClusterMembersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
