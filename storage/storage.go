@@ -443,6 +443,24 @@ func (s *Storage) EventsBetween(fromExclusive, toInclusive int64) []Event {
 	return res
 }
 
+func (s *Storage) IsMessageLikedByUser(msgId, userId int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if userId == 0 || msgId == 0 {
+		return false
+	}
+	_, ok := s.likes[msgId][userId]
+	return ok
+}
+
+func (s *Storage) GetUser(userId int64) User {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	user := s.users[userId]
+	return user
+}
+
 func uniqueSorted(ids []int64) []int64 {
 	if len(ids) == 0 {
 		return nil

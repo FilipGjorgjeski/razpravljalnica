@@ -80,7 +80,7 @@ func main() {
 	fmt.Printf("message retry: id=%d likes=%d\n", m2.GetId(), m2.GetLikes())
 
 	ctx, cancel = call(4 * time.Second)
-	msgs, err := c.GetMessages(ctx, t.GetId(), 0, 10)
+	msgs, err := c.GetMessages(ctx, t.GetId(), 0, 10, 0)
 	cancel()
 	if err != nil {
 		log.Fatalf("GetMessages: %v", err)

@@ -317,7 +317,7 @@ func cmdMessage(opts globalOpts, args []string) error {
 		_ = fs.Parse(args[1:])
 		ctx, cancel := context.WithTimeout(context.Background(), opts.timeout)
 		defer cancel()
-		resp, err := c.GetMessages(ctx, *topicID, *fromID, int32(*limit))
+		resp, err := c.GetMessages(ctx, *topicID, *fromID, int32(*limit), 0)
 		if err != nil {
 			return err
 		}

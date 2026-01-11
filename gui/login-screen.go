@@ -7,7 +7,7 @@ import (
 func newLoginScreen(d *Display, header *Header) tview.Primitive {
 	username := ""
 
-	loginForm := tview.NewForm().
+	loginForm := StyleNormalForm(tview.NewForm()).
 		AddInputField("Username", "", 20, nil, func(text string) { username = text }).
 		AddButton("Submit", func() {
 			go d.Login(username)

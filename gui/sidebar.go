@@ -20,11 +20,17 @@ type SidebarData struct {
 	topics []*razpravljalnica.Topic
 }
 
-func NewSidebar() *Sidebar {
-	table := tview.NewTable()
+const noTopicsPlaceholder = `[white]No topics created
+[yellow]N[white]: New topic`
 
-	grid := tview.NewGrid().SetRows(0, 5).SetColumns(0).
-		AddItem(table, 0, 0, 1, 1, 0, 0, true)
+const selectTopicPlaceholder = `[white]Select topic
+[yellow]N[white]: New topic`
+
+func NewSidebar() *Sidebar {
+	table := StyleNormalTable(tview.NewTable())
+
+	grid := tview.NewGrid().SetRows(3, 0, 5).SetColumns(0).
+		AddItem(table, 1, 0, 1, 1, 0, 0, true)
 
 	textInput := tview.NewInputField().
 		SetLabel("New topic").
@@ -37,15 +43,17 @@ func NewSidebar() *Sidebar {
 		topicFormInput: textInput,
 	}
 
-	table.Select(0, 0).SetSelectable(true, false).SetSelectedFunc(func(row, column int) {
-		topic := table.GetCell(row, column).GetReference().(*razpravljalnica.Topic)
-		sidebar.d.ToMessageList(topic)
-	})
+	table.Select(0, 0).
+		SetSelectable(true, false).
+		SetSelectedFunc(func(row, column int) {
+			topic := table.GetCell(row, column).GetReference().(*razpravljalnica.Topic)
+			sidebar.d.ToMessageList(topic)
+		})
 
 	textInput.
 		SetChangedFunc(func(text string) { sidebar.topicFormInputContent = text })
 
-	topicForm := tview.NewForm().
+	topicForm := StyleNormalForm(tview.NewForm()).
 		AddFormItem(textInput).
 		AddButton("Create", func() {
 			sidebar.d.createTopic(sidebar.topicFormInputContent)
@@ -62,15 +70,26 @@ func (s *Sidebar) GetView() tview.Primitive {
 }
 
 func (s *Sidebar) Update(data SidebarData) {
+	if len(data.topics) == 0 {
+		s.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(noTopicsPlaceholder), 0, 0, 1, 1, 0, 0, false)
+	} else {
+		s.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(selectTopicPlaceholder), 0, 0, 1, 1, 0, 0, false)
+	}
+
 	s.topicsTable.Clear()
 
 	for i, topic := range data.topics {
-		cell := tview.NewTableCell(topic.GetName()).SetReference(topic)
+		cell := StyleNormalTableCell(tview.NewTableCell(topic.GetName())).
+			SetReference(topic).
+			SetExpansion(1)
+
 		if s.d.selectedTopic != nil && s.d.selectedTopic.Id == topic.Id {
-			cell.SetBackgroundColor(colorFieldSelected)
+			StyleSelectedTableCell(cell)
 		}
+
 		s.topicsTable.SetCell(i, 0, cell)
 	}
+
 }
 
 func (s *Sidebar) ResetNewTopicBox() {
@@ -79,12 +98,12 @@ func (s *Sidebar) ResetNewTopicBox() {
 }
 
 func (s *Sidebar) HideAndResetNewTopicBox() {
-	s.view.AddItem(tview.NewBox(), 1, 0, 1, 1, 0, 0, false)
+	s.view.AddItem(tview.NewBox(), 2, 0, 1, 1, 0, 0, false)
 	s.ResetNewTopicBox()
 }
 
 func (s *Sidebar) ShowNewTopicBox() {
-	s.view.AddItem(s.topicForm, 1, 0, 1, 1, 0, 0, true)
+	s.view.AddItem(s.topicForm, 2, 0, 1, 1, 0, 0, true)
 }
 
 func (s *Sidebar) SetSelectable(value bool) {

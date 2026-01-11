@@ -22,8 +22,6 @@ const (
 	MessageEdit       DisplayMode = "MESSAGE_EDIT"
 )
 
-const colorFieldSelected = tcell.ColorDarkGray
-
 type Display struct {
 	user       *razpravljalnica.User
 	activeMode DisplayMode
@@ -158,10 +156,11 @@ func (d *Display) Update() {
 		}
 
 		d.header.Update(HeaderData{
-			username:     d.user.GetName(),
-			clusterState: d.client.State().String(),
-			err:          "",
-			displayMode:  d.activeMode,
+			username:           d.user.GetName(),
+			clusterState:       d.client.State().String(),
+			err:                "",
+			displayMode:        d.activeMode,
+			highlightedMessage: d.chat.GetHighlightedMessage(),
 		})
 
 		d.chat.Update(ChatData{
@@ -202,10 +201,11 @@ func (d *Display) Login(username string) {
 
 func (d *Display) handleError(err error) {
 	d.header.Update(HeaderData{
-		username:     d.GetUsername(),
-		clusterState: d.client.State().String(),
-		err:          err.Error(),
-		displayMode:  d.activeMode,
+		username:           d.GetUsername(),
+		clusterState:       d.client.State().String(),
+		err:                err.Error(),
+		displayMode:        d.activeMode,
+		highlightedMessage: d.chat.GetHighlightedMessage(),
 	})
 }
 
@@ -258,7 +258,7 @@ func (d *Display) ToNewTopicBox() {
 func (d *Display) fetchAndUpdateMessageList(topicId int64) {
 	ctx, cancel := TimeoutContext()
 	defer cancel()
-	messages, err := d.client.GetMessages(ctx, topicId, 0, 0)
+	messages, err := d.client.GetMessages(ctx, topicId, 0, 0, d.user.Id)
 	if err != nil {
 		d.handleError(err)
 		return
@@ -293,7 +293,14 @@ func (d *Display) ToMessageList(topic *razpravljalnica.Topic) {
 // Focus message box, editing message if provided
 func (d *Display) ToMessageBox(selectedMessage *razpravljalnica.Message) {
 	d.lock.Lock()
-	if selectedMessage == nil || selectedMessage.UserId != d.user.Id {
+
+	if selectedMessage != nil && selectedMessage.UserId != d.user.Id {
+		// Attempting to edit other person's message
+		d.lock.Unlock()
+		return
+	}
+
+	if selectedMessage == nil {
 		d.activeMode = MessageNew
 		d.selectedMessage = nil
 	} else {

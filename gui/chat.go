@@ -2,7 +2,6 @@ package gui
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	razpravljalnica "github.com/FilipGjorgjeski/razpravljalnica/protos"
@@ -26,18 +25,33 @@ type ChatData struct {
 	messages []*razpravljalnica.Message
 }
 
+const controlsPlaceholderTop = `Razpravljalnica GUI
+`
+const controlsPlaceholderBottom = `Controls:
+- [yellow]Arrow keys[white]: navigation
+- [yellow]N[white]: Create new topic / message
+- [yellow]Enter[white]: Select topic / edit message
+- [yellow]L[white]: Like message
+- [yellow]DEL[white]: Delete message
+- [yellow]ESC[white]: Cancel / navigate back
+
+DEBUG:
+[yellow]Ctrl + R[white]: Trigger UI update
+`
+
+const noMessagesPlaceholder = `[yellow]N[white]: New message`
+
 func NewChat() *Chat {
 
-	table := tview.NewTable().SetSelectable(true, false).SetBorders(true).
-		SetSelectedStyle(tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorWhite))
+	table := StyleNormalTable(tview.NewTable()).SetSelectable(true, false).SetBorders(true)
 
 	textInput := tview.NewInputField().
 		SetLabel("Message").
 		SetFieldWidth(0).
 		SetAcceptanceFunc(tview.InputFieldMaxLength(100))
 
-	grid := tview.NewGrid().SetColumns(0).SetRows(0, 5).
-		AddItem(table, 0, 0, 1, 1, 0, 0, true)
+	grid := tview.NewGrid().SetColumns(0).SetRows(2, 0, 5).
+		AddItem(table, 1, 0, 1, 1, 0, 0, true)
 
 	chat := &Chat{
 		view:             grid,
@@ -55,7 +69,7 @@ func NewChat() *Chat {
 	textInput.
 		SetChangedFunc(func(text string) { chat.messageFormInputContent = text })
 
-	messageForm := tview.NewForm().
+	messageForm := StyleNormalForm(tview.NewForm()).
 		AddFormItem(textInput).
 		AddButton("Send", func() {
 			chat.d.sendOrUpdateMessage(chat.messageFormInputContent)
@@ -72,6 +86,15 @@ func (c *Chat) GetView() tview.Primitive {
 }
 
 func (c *Chat) Update(data ChatData) {
+	if c.d.activeMode == UsernameSelection || c.d.activeMode == TopicMenu || c.d.activeMode == TopicNew {
+		c.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(controlsPlaceholderTop), 0, 0, 1, 1, 0, 0, false)
+		c.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(controlsPlaceholderBottom), 1, 0, 1, 1, 0, 0, true)
+		return
+	}
+
+	c.view.AddItem(tview.NewTextView().SetDynamicColors(true).SetText(noMessagesPlaceholder), 0, 0, 1, 1, 0, 0, true)
+	c.view.AddItem(c.messageList, 1, 0, 1, 1, 0, 0, true)
+
 	c.messageList.Clear()
 
 	for i, message := range data.messages {
@@ -80,21 +103,27 @@ func (c *Chat) Update(data ChatData) {
 }
 
 func (c *Chat) addChatMessageEntry(message *razpravljalnica.Message, row int) {
-	dateCell := tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)).SetTextColor(tcell.ColorDarkGray)
+	dateCell := StyleMutedTableCell(tview.NewTableCell(message.GetCreatedAt().AsTime().Format(time.DateTime)))
 
-	usernameCell := tview.NewTableCell(fmt.Sprintf("<%s>:", strconv.Itoa(int(message.GetUserId())))).SetAlign(tview.AlignRight)
+	usernameCell := StyleNormalTableCell(tview.NewTableCell(fmt.Sprintf("<%s>:", message.GetUsername()))).
+		SetAlign(tview.AlignRight)
 
-	messageCell := tview.NewTableCell(message.GetText()).
+	messageCell := StyleNormalTableCell(tview.NewTableCell(message.GetText())).
 		SetAlign(tview.AlignLeft).
 		SetExpansion(1).
 		SetReference(message)
 
-	likesCell := tview.NewTableCell(fmt.Sprintf("♥ %d", message.GetLikes()))
+	likesCell := StyleMutedTableCell(tview.NewTableCell(fmt.Sprintf("%d ♥", message.GetLikes())))
 
 	if c.d.selectedMessage != nil && c.d.selectedMessage.Id == message.Id {
-		dateCell.SetBackgroundColor(colorFieldSelected)
-		usernameCell.SetBackgroundColor(colorFieldSelected)
-		messageCell.SetBackgroundColor(colorFieldSelected)
+		StyleSelectedTableCell(dateCell)
+		StyleSelectedTableCell(usernameCell)
+		StyleSelectedTableCell(messageCell)
+		StyleSelectedTableCell(likesCell)
+	}
+
+	if message.LikedByUser {
+		likesCell.SetTextColor(colorHighlight).SetAttributes(tcell.AttrBold)
 	}
 
 	c.messageList.SetCell(row, 0, dateCell)
@@ -109,12 +138,12 @@ func (c *Chat) ResetMessageBox() {
 }
 
 func (c *Chat) HideAndResetMessageBox() {
-	c.view.AddItem(tview.NewBox(), 1, 0, 1, 1, 0, 0, false)
+	c.view.AddItem(tview.NewBox(), 2, 0, 1, 1, 0, 0, false)
 	c.ResetMessageBox()
 }
 
 func (c *Chat) ShowMessageBox() {
-	c.view.AddItem(c.messageForm, 1, 0, 1, 1, 0, 0, true)
+	c.view.AddItem(c.messageForm, 2, 0, 1, 1, 0, 0, true)
 }
 
 func (c *Chat) SetSelectable(value bool) {
@@ -125,5 +154,9 @@ func (c *Chat) SetSelectable(value bool) {
 }
 
 func (c *Chat) GetHighlightedMessage() *razpravljalnica.Message {
-	return c.messageList.GetCell(c.highlightedRow, 2).Reference.(*razpravljalnica.Message)
+	msg, ok := c.messageList.GetCell(c.highlightedRow, 2).Reference.(*razpravljalnica.Message)
+	if !ok {
+		return nil
+	}
+	return msg
 }

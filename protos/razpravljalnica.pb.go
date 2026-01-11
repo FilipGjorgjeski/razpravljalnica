@@ -242,6 +242,8 @@ type Message struct {
 	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	Likes         int32                  `protobuf:"varint,6,opt,name=likes,proto3" json:"likes,omitempty"`
+	LikedByUser   bool                   `protobuf:"varint,7,opt,name=likedByUser,proto3" json:"likedByUser,omitempty"`
+	Username      string                 `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -316,6 +318,20 @@ func (x *Message) GetLikes() int32 {
 		return x.Likes
 	}
 	return 0
+}
+
+func (x *Message) GetLikedByUser() bool {
+	if x != nil {
+		return x.LikedByUser
+	}
+	return false
+}
+
+func (x *Message) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
 }
 
 type Like struct {
@@ -863,6 +879,7 @@ type GetMessagesRequest struct {
 	TopicId       int64                  `protobuf:"varint,1,opt,name=topic_id,json=topicId,proto3" json:"topic_id,omitempty"`
 	FromMessageId int64                  `protobuf:"varint,2,opt,name=from_message_id,json=fromMessageId,proto3" json:"from_message_id,omitempty"` // starting id of the message (0 from beggining)
 	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`                                        // max number of messages
+	UserId        int64                  `protobuf:"varint,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                        // optional, provides per-message liked status
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -914,6 +931,13 @@ func (x *GetMessagesRequest) GetFromMessageId() int64 {
 func (x *GetMessagesRequest) GetLimit() int32 {
 	if x != nil {
 		return x.Limit
+	}
+	return 0
+}
+
+func (x *GetMessagesRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
 	}
 	return 0
 }
@@ -2467,7 +2491,7 @@ const file_protos_razpravljalnica_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"+\n" +
 	"\x05Topic\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xb2\x01\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xf0\x01\n" +
 	"\aMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x19\n" +
 	"\btopic_id\x18\x02 \x01(\x03R\atopicId\x12\x17\n" +
@@ -2475,7 +2499,9 @@ const file_protos_razpravljalnica_proto_rawDesc = "" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x129\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x14\n" +
-	"\x05likes\x18\x06 \x01(\x05R\x05likes\"Y\n" +
+	"\x05likes\x18\x06 \x01(\x05R\x05likes\x12 \n" +
+	"\vlikedByUser\x18\a \x01(\bR\vlikedByUser\x12\x1a\n" +
+	"\busername\x18\b \x01(\tR\busername\"Y\n" +
 	"\x04Like\x12\x19\n" +
 	"\btopic_id\x18\x01 \x01(\x03R\atopicId\x12\x1d\n" +
 	"\n" +
@@ -2521,11 +2547,12 @@ const file_protos_razpravljalnica_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x04 \x01(\tR\trequestId\"D\n" +
 	"\x12ListTopicsResponse\x12.\n" +
-	"\x06topics\x18\x01 \x03(\v2\x16.razpravljalnica.TopicR\x06topics\"m\n" +
+	"\x06topics\x18\x01 \x03(\v2\x16.razpravljalnica.TopicR\x06topics\"\x86\x01\n" +
 	"\x12GetMessagesRequest\x12\x19\n" +
 	"\btopic_id\x18\x01 \x01(\x03R\atopicId\x12&\n" +
 	"\x0ffrom_message_id\x18\x02 \x01(\x03R\rfromMessageId\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"K\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\x03R\x06userId\"K\n" +
 	"\x13GetMessagesResponse\x124\n" +
 	"\bmessages\x18\x01 \x03(\v2\x18.razpravljalnica.MessageR\bmessages\"\x9c\x01\n" +
 	"\x15SubscribeTopicRequest\x12\x19\n" +

@@ -1,6 +1,26 @@
 # razpravljalnica
 
+## CLI and server docs
+
+- [CLI.md](CLI.md)
+
+- [CLI-scenarios.md](CLI-scenarios.md)
+
 ## GUI Client
+
+Launch with
+
+```
+go run cmd/razpravljalnica-gui-client/main.go
+```
+
+or
+
+```
+make run-gui
+```
+
+use the `--control-plane=:50050` command to specify a custom control plane address.
 
 ### Controls
 
@@ -17,3 +37,7 @@ Navigation via arrow keys
 `Delete` to delete your message
 
 `Ctrl+R` forces a UI update, debugging only
+
+```
+
+```
