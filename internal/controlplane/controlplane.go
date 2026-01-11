@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/raft"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -81,6 +82,10 @@ type Server struct {
 	logStore    raft.LogStore
 	stableStore raft.StableStore
 	snapStore   raft.SnapshotStore
+
+	grpcListenAddr string
+	grpcAddrsMu    sync.RWMutex
+	grpcAddrs      map[string]string
 }
 
 func New(cfg Config) *Server {
@@ -88,20 +93,22 @@ func New(cfg Config) *Server {
 		cfg.HeartbeatTimeout = 3 * time.Second
 	}
 	s := &Server{
-		cfg:      cfg,
-		nodes:    map[string]*nodeRuntime{},
-		pending:  map[string]*pb.NodeInfo{},
-		watchers: map[int64]chan *pb.GetClusterStateResponse{},
-		alive:    map[string]bool{},
+		cfg:       cfg,
+		nodes:     map[string]*nodeRuntime{},
+		pending:   map[string]*pb.NodeInfo{},
+		watchers:  map[int64]chan *pb.GetClusterStateResponse{},
+		alive:     map[string]bool{},
+		grpcAddrs: map[string]string{},
 	}
 
 	s.fsm = &controlPlaneFSM{server: s}
 	return s
 }
 
-func NewWithRAFT(cfg Config, raftCfg RaftConfig) *Server {
+func NewWithRAFT(cfg Config, raftCfg RaftConfig, listenAddress string) *Server {
 	s := New(cfg)
 	s.raftConfig = raftCfg
+	s.grpcListenAddr = listenAddress
 	return s
 }
 
@@ -158,6 +165,78 @@ func (s *Server) isRAFTLeader() bool {
 	return s.raft.State() == raft.Leader
 }
 
+func (s *Server) getLeaderNodeID() (string, error) {
+	leaderRaftAddr := s.raft.Leader()
+	if leaderRaftAddr == "" {
+		return "", status.Error(codes.Unavailable, "no leader elected")
+	}
+
+	configFuture := s.raft.GetConfiguration()
+	if configFuture.Error() != nil {
+		return "", configFuture.Error()
+	}
+
+	var leaderID string
+	for _, server := range configFuture.Configuration().Servers {
+		if server.Address == leaderRaftAddr {
+			leaderID = string(server.ID)
+			break
+		}
+	}
+
+	if leaderID == "" {
+		return "", status.Error(codes.Internal, "leader ID not found")
+	}
+
+	return leaderID, nil
+}
+
+func (s *Server) getLeaderGrpcAddr() (string, error) {
+	if s.raft == nil {
+		return "", nil
+	}
+
+	if s.isRAFTLeader() {
+		return "", nil
+	}
+
+	leaderID, err := s.getLeaderNodeID()
+	if err != nil {
+		return "", err
+	}
+
+	s.grpcAddrsMu.RLock()
+	grpcAddr := s.grpcAddrs[leaderID]
+	s.grpcAddrsMu.RUnlock()
+
+	if grpcAddr == "" {
+		return "", status.Errorf(codes.Internal, "gRPC address not found for leader %s", leaderID)
+	}
+
+	return grpcAddr, nil
+}
+
+func forwardToLeader[T any](s *Server, originalErr error, handler func(pb.ControlPlaneClient) (T, error)) (T, error) {
+	var empty T
+
+	leaderAddr, lookupErr := s.getLeaderGrpcAddr()
+	if lookupErr != nil || leaderAddr == "" {
+		log.Printf("[raft]: forwarding to leader failed: %s", lookupErr)
+		return empty, originalErr
+	}
+
+	log.Printf("[raft]: forwarding request to leader at %s", leaderAddr)
+
+	conn, err := grpc.NewClient(leaderAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return empty, err
+	}
+	defer conn.Close()
+
+	client := pb.NewControlPlaneClient(conn)
+	return handler(client)
+}
+
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	id := strings.TrimSpace(req.GetNodeId())
 	addr := strings.TrimSpace(req.GetAddress())
@@ -172,7 +251,9 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 
 	_, err = s.raftApply(cmd, 3*time.Second)
 	if err != nil {
-		return nil, err
+		return forwardToLeader(s, err, func(client pb.ControlPlaneClient) (*pb.HeartbeatResponse, error) {
+			return client.Heartbeat(ctx, req)
+		})
 	}
 
 	now := time.Now().UTC()
@@ -218,7 +299,9 @@ func (s *Server) AddNode(ctx context.Context, req *pb.AddNodeRequest) (*pb.AddNo
 
 	_, err = s.raftApply(cmd, 5*time.Second)
 	if err != nil {
-		return nil, err
+		return forwardToLeader(s, err, func(client pb.ControlPlaneClient) (*pb.AddNodeResponse, error) {
+			return client.AddNode(ctx, req)
+		})
 	}
 
 	s.mu.Lock()
@@ -240,7 +323,9 @@ func (s *Server) ActivateNode(ctx context.Context, req *pb.ActivateNodeRequest) 
 
 	_, err = s.raftApply(cmd, 5*time.Second)
 	if err != nil {
-		return nil, err
+		return forwardToLeader(s, err, func(client pb.ControlPlaneClient) (*pb.GetClusterStateResponse, error) {
+			return client.ActivateNode(ctx, req)
+		})
 	}
 
 	now := time.Now()

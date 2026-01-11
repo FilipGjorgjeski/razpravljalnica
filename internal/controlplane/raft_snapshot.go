@@ -61,5 +61,4 @@ func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 }
 
 func (s *fsmSnapshot) Release() {
-	// Nothing needs to be done
 }

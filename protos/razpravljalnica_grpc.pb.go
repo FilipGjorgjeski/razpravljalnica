@@ -517,7 +517,7 @@ type ControlPlaneClient interface {
 	ActivateNode(ctx context.Context, in *ActivateNodeRequest, opts ...grpc.CallOption) (*GetClusterStateResponse, error)
 	// RAFT cluster management
 	// Control plane node wants to join a cluster
-	JoinRAFTCluster(ctx context.Context, in *JoinRAFTClusterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	JoinRAFTCluster(ctx context.Context, in *JoinRAFTClusterRequest, opts ...grpc.CallOption) (*JoinRAFTClusterResponse, error)
 	// Control plane node wants to leave a cluster
 	LeaveRAFTCluster(ctx context.Context, in *LeaveRAFTClusterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Control plane node wants current cluster status
@@ -591,9 +591,9 @@ func (c *controlPlaneClient) ActivateNode(ctx context.Context, in *ActivateNodeR
 	return out, nil
 }
 
-func (c *controlPlaneClient) JoinRAFTCluster(ctx context.Context, in *JoinRAFTClusterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *controlPlaneClient) JoinRAFTCluster(ctx context.Context, in *JoinRAFTClusterRequest, opts ...grpc.CallOption) (*JoinRAFTClusterResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(emptypb.Empty)
+	out := new(JoinRAFTClusterResponse)
 	err := c.cc.Invoke(ctx, ControlPlane_JoinRAFTCluster_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -640,7 +640,7 @@ type ControlPlaneServer interface {
 	ActivateNode(context.Context, *ActivateNodeRequest) (*GetClusterStateResponse, error)
 	// RAFT cluster management
 	// Control plane node wants to join a cluster
-	JoinRAFTCluster(context.Context, *JoinRAFTClusterRequest) (*emptypb.Empty, error)
+	JoinRAFTCluster(context.Context, *JoinRAFTClusterRequest) (*JoinRAFTClusterResponse, error)
 	// Control plane node wants to leave a cluster
 	LeaveRAFTCluster(context.Context, *LeaveRAFTClusterRequest) (*emptypb.Empty, error)
 	// Control plane node wants current cluster status
@@ -670,7 +670,7 @@ func (UnimplementedControlPlaneServer) AddNode(context.Context, *AddNodeRequest)
 func (UnimplementedControlPlaneServer) ActivateNode(context.Context, *ActivateNodeRequest) (*GetClusterStateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ActivateNode not implemented")
 }
-func (UnimplementedControlPlaneServer) JoinRAFTCluster(context.Context, *JoinRAFTClusterRequest) (*emptypb.Empty, error) {
+func (UnimplementedControlPlaneServer) JoinRAFTCluster(context.Context, *JoinRAFTClusterRequest) (*JoinRAFTClusterResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method JoinRAFTCluster not implemented")
 }
 func (UnimplementedControlPlaneServer) LeaveRAFTCluster(context.Context, *LeaveRAFTClusterRequest) (*emptypb.Empty, error) {

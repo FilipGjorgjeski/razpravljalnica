@@ -124,6 +124,12 @@ func (s *Server) InitRAFT() error {
 	}
 	s.raft = ra
 
+	if s.grpcListenAddr != "" {
+		s.grpcAddrsMu.Lock()
+		s.grpcAddrs[s.raftConfig.NodeID] = s.grpcListenAddr
+		s.grpcAddrsMu.Unlock()
+	}
+
 	if s.raftConfig.Bootstrap {
 		// Bootstrap cluster
 
@@ -166,16 +172,23 @@ func (s *Server) joinCluster() error {
 
 	client := pb.NewControlPlaneClient(conn)
 	req := &pb.JoinRAFTClusterRequest{
-		NodeId:  s.raftConfig.NodeID,
-		Address: string(s.transport.LocalAddr()),
+		NodeId:      s.raftConfig.NodeID,
+		Address:     string(s.transport.LocalAddr()),
+		GrpcAddress: s.grpcListenAddr,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err = client.JoinRAFTCluster(ctx, req)
+	resp, err := client.JoinRAFTCluster(ctx, req)
 	if err != nil {
 		return err
 	}
+
+	s.grpcAddrsMu.Lock()
+	for nodeID, grpcAddr := range resp.GetClusterMembers() {
+		s.grpcAddrs[nodeID] = grpcAddr
+	}
+	s.grpcAddrsMu.Unlock()
 
 	log.Printf("[raft]: successfully joined RAFT cluster at %s", s.raftConfig.JoinAddr)
 	return nil
@@ -201,13 +214,17 @@ func (s *Server) Shutdown() error {
 	return nil
 }
 
-func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterRequest) (*emptypb.Empty, error) {
+func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterRequest) (*pb.JoinRAFTClusterResponse, error) {
 	if s.raft == nil {
 		return nil, status.Error(codes.FailedPrecondition, "RAFT not enabled")
 	}
 
+	// If not leader, forward to leader
 	if !s.isRAFTLeader() {
-		return nil, status.Error(codes.FailedPrecondition, "not the leader")
+		return forwardToLeader(s, status.Error(codes.FailedPrecondition, "not the leader"),
+			func(client pb.ControlPlaneClient) (*pb.JoinRAFTClusterResponse, error) {
+				return client.JoinRAFTCluster(ctx, req)
+			})
 	}
 
 	nodeID := req.GetNodeId()
@@ -218,8 +235,17 @@ func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterReq
 	if address == "" {
 		return nil, status.Error(codes.InvalidArgument, "address required")
 	}
+	grpcAddress := req.GetGrpcAddress()
+	if grpcAddress == "" {
+		return nil, status.Error(codes.InvalidArgument, "grpc_address required")
+	}
 
-	log.Printf("[raft]: adding RAFT server node=%s addr=%s", nodeID, address)
+	log.Printf("[raft]: adding RAFT server node=%s addr=%s grpc=%s", nodeID, address, grpcAddress)
+
+	s.grpcAddrsMu.Lock()
+	s.grpcAddrs[nodeID] = grpcAddress
+	s.grpcAddrsMu.Unlock()
+
 	future := s.raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(address), 0, 0)
 
 	if future.Error() != nil {
@@ -227,7 +253,18 @@ func (s *Server) JoinRAFTCluster(ctx context.Context, req *pb.JoinRAFTClusterReq
 	}
 
 	log.Printf("[raft]: successfully added RAFT server node=%s  addr=%s", nodeID, address)
-	return &emptypb.Empty{}, nil
+
+	s.grpcAddrsMu.RLock()
+	// Copy map to ensure no async shenanigans happen
+	clusterMembers := make(map[string]string)
+	for id, addr := range s.grpcAddrs {
+		clusterMembers[id] = addr
+	}
+	s.grpcAddrsMu.RUnlock()
+
+	return &pb.JoinRAFTClusterResponse{
+		ClusterMembers: clusterMembers,
+	}, nil
 }
 
 func (s *Server) LeaveRAFTCluster(ctx context.Context, req *pb.LeaveRAFTClusterRequest) (*emptypb.Empty, error) {
@@ -236,7 +273,10 @@ func (s *Server) LeaveRAFTCluster(ctx context.Context, req *pb.LeaveRAFTClusterR
 	}
 
 	if !s.isRAFTLeader() {
-		return nil, status.Error(codes.FailedPrecondition, "not the leader")
+		return forwardToLeader(s, status.Error(codes.FailedPrecondition, "not the leader"),
+			func(client pb.ControlPlaneClient) (*emptypb.Empty, error) {
+				return client.LeaveRAFTCluster(ctx, req)
+			})
 	}
 
 	nodeID := req.GetNodeId()

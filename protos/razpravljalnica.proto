@@ -190,7 +190,7 @@ service ControlPlane {
 
   // RAFT cluster management
   // Control plane node wants to join a cluster
-  rpc JoinRAFTCluster(JoinRAFTClusterRequest) returns (google.protobuf.Empty);
+  rpc JoinRAFTCluster(JoinRAFTClusterRequest) returns (JoinRAFTClusterResponse);
 
   // Control plane node wants to leave a cluster
   rpc LeaveRAFTCluster(LeaveRAFTClusterRequest) returns (google.protobuf.Empty);
@@ -255,6 +255,11 @@ message ActivateNodeRequest {
 message JoinRAFTClusterRequest {
   string node_id = 1;
   string address = 2; // RAFT transport address
+  string grpc_address = 3; // gRPC address for forwarding requests
+}
+
+message JoinRAFTClusterResponse {
+  map<string, string> cluster_members = 1;
 }
 
 message LeaveRAFTClusterRequest {

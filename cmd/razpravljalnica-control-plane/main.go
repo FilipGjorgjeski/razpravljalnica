@@ -24,7 +24,7 @@ func main() {
 
 	_ = fs.Parse(os.Args[1:])
 
-	srv := controlplane.NewWithRAFT(cfg, raftCfg)
+	srv := controlplane.NewWithRAFT(cfg, raftCfg, *listen)
 
 	if err := srv.InitRAFT(); err != nil {
 		log.Fatalf("failed to initialize RAFT: %s", err)

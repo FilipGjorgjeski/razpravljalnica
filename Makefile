@@ -32,7 +32,7 @@ run-control-plane:
 	go run cmd/razpravljalnica-control-plane/main.go --chain node1,node2,node3
 
 run-gui:
-	go run cmd/razpravljalnica-gui-client/main.go --control-plane=localhost:50051
+	go run cmd/razpravljalnica-gui-client/main.go --control-plane=localhost:50050
 
 reset-control-planes:
 	rm -r raft-data
