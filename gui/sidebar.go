@@ -53,7 +53,7 @@ func NewSidebar() *Sidebar {
 	textInput.
 		SetChangedFunc(func(text string) { sidebar.topicFormInputContent = text })
 
-	topicForm := tview.NewForm().
+	topicForm := StyleNormalForm(tview.NewForm()).
 		AddFormItem(textInput).
 		AddButton("Create", func() {
 			sidebar.d.createTopic(sidebar.topicFormInputContent)

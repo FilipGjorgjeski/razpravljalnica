@@ -69,7 +69,7 @@ func NewChat() *Chat {
 	textInput.
 		SetChangedFunc(func(text string) { chat.messageFormInputContent = text })
 
-	messageForm := tview.NewForm().
+	messageForm := StyleNormalForm(tview.NewForm()).
 		AddFormItem(textInput).
 		AddButton("Send", func() {
 			chat.d.sendOrUpdateMessage(chat.messageFormInputContent)

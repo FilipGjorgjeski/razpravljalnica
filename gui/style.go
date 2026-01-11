@@ -18,6 +18,9 @@ const (
 	colorHighlightedBg = tcell.ColorGray
 
 	colorMutedText = tcell.ColorGray
+
+	colorFormText = tcell.ColorWhite
+	colorFormBg   = tcell.ColorSlateGray
 )
 
 func StyleNormalTableCell(cell *tview.TableCell) *tview.TableCell {
@@ -43,4 +46,12 @@ func StyleSelectedTableCell(cell *tview.TableCell) *tview.TableCell {
 func StyleNormalTable(table *tview.Table) *tview.Table {
 	return table.
 		SetSelectedStyle(tcell.StyleDefault.Background(colorHighlightedBg).Foreground(colorHighlightedFg))
+}
+
+func StyleNormalForm(form *tview.Form) *tview.Form {
+	return form.
+		SetFieldBackgroundColor(colorFormBg).
+		SetFieldTextColor(colorFormText).
+		SetButtonBackgroundColor(colorFormBg).
+		SetButtonTextColor(colorFormText)
 }
