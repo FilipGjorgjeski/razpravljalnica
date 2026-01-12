@@ -22,5 +22,5 @@ func newLoginScreen(d *Display, header *Header) tview.Primitive {
 
 	return grid.
 		AddItem(header.GetView(), 0, 0, 1, 1, 0, 0, false).
-		AddItem(centeredLoginForm, 1, 0, 1, 1, 0, 100, true)
+		AddItem(centeredLoginForm, 1, 0, 1, 1, 0, 0, true)
 }
